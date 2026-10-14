@@ -19,6 +19,8 @@ permissions:
 jobs:
   docker:
     runs-on: ubuntu-latest
+    # fork 没有镜像仓库凭据，只在上游仓库发布镜像
+    if: github.repository == 'xpzouying/xiaohongshu-mcp'
 
     steps:
     - uses: actions/checkout@v7
