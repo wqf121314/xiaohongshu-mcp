@@ -65,7 +65,10 @@ func (a *SearchTopicsAction) Search(ctx context.Context, keyword string) ([]Topi
 	// 不论搜索成败都清空正文；用独立超时，调用方取消也要清掉
 	clearCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if err := clearEditor(editor.Context(clearCtx)); err != nil {
+	if err := clearEditor(editor.Context(clearCtx), "#"+keyword); err != nil {
+		if searchErr != nil {
+			logrus.Warnf("搜索话题失败: %v", searchErr)
+		}
 		return nil, err
 	}
 	time.Sleep(time.Second) // 技术等待：等页面自动保存跟上清空后的状态
@@ -111,28 +114,51 @@ func typeAndCapture(ctx context.Context, editor *rod.Element, keyword string) ([
 	return topics, nil
 }
 
-// clearEditor 全选后删除正文，确认清空；不成功再试一次。
-func clearEditor(editor *rod.Element) error {
+// clearEditor 清空正文：先全选删除；不成功再按 End 后逐个退格，确认清空。
+func clearEditor(editor *rod.Element, typed string) error {
 	mod := input.ControlLeft
 	if runtime.GOOS == "darwin" {
 		mod = input.MetaLeft
 	}
+	selectAll := func(ka *rod.KeyActions) *rod.KeyActions {
+		return ka.Press(mod).Type(input.KeyA).Release(mod).Type(input.Backspace)
+	}
+	// 兜底只用退格，不依赖编辑器是否支持全选快捷键
+	backspaces := func(ka *rod.KeyActions) *rod.KeyActions {
+		ka.Type(input.End)
+		for i := 0; i < len([]rune(typed))+2; i++ {
+			ka.Type(input.Backspace)
+		}
+		return ka
+	}
 
-	for i := 0; i < 2; i++ {
-		ka, err := editor.KeyActions()
-		if err != nil {
-			return errors.Wrap(err, "清空正文失败")
+	for _, keys := range []func(*rod.KeyActions) *rod.KeyActions{selectAll, backspaces} {
+		if err := tryClear(editor, keys); err != nil {
+			slog.Warn("正文未清空", "err", err)
+			continue
 		}
-		if err := ka.Press(mod).Type(input.KeyA).Release(mod).Type(input.Backspace).Do(); err != nil {
-			return errors.Wrap(err, "清空正文失败")
-		}
-		time.Sleep(300 * time.Millisecond) // 技术等待：等编辑器更新
-
-		text, err := editor.Text()
-		if err == nil && strings.TrimSpace(text) == "" {
-			return nil
-		}
-		slog.Warn("正文未清空，重试", "text", text, "err", err)
+		return nil
 	}
 	return errors.New("清空正文失败，草稿箱里可能留下一篇草稿，请手动删除")
+}
+
+// tryClear 按一次键，确认正文为空。
+func tryClear(editor *rod.Element, keys func(*rod.KeyActions) *rod.KeyActions) error {
+	ka, err := editor.KeyActions()
+	if err != nil {
+		return err
+	}
+	if err := keys(ka).Do(); err != nil {
+		return err
+	}
+	time.Sleep(300 * time.Millisecond) // 技术等待：等编辑器更新
+
+	text, err := editor.Text()
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(text) != "" {
+		return errors.Errorf("正文仍有内容: %q", text)
+	}
+	return nil
 }
