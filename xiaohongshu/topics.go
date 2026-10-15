@@ -66,19 +66,11 @@ func FormatTopicResults(rs []TopicResult) string {
 	return "话题：" + strings.Join(items, "；")
 }
 
-var viewCountRe = regexp.MustCompile(`^(\d+(?:\.\d+)?)\s*(亿|万|w|W)?$`)
+var viewCountRe = regexp.MustCompile(`^(\d+(?:\.\d+)?)\s*(亿|万|w|W)?\s*(?:次\s*浏览|浏览|次)?$`)
 
 // ParseViewCount 解析浏览量文本，如 "1.2亿次浏览"、"3.4万"、"856次浏览"，认不出返回 0。
 func ParseViewCount(s string) int64 {
-	s = strings.TrimSpace(s)
-	for _, suffix := range []string{"次浏览", "浏览", "次"} {
-		if strings.HasSuffix(s, suffix) {
-			s = strings.TrimSpace(strings.TrimSuffix(s, suffix))
-			break
-		}
-	}
-
-	m := viewCountRe.FindStringSubmatch(s)
+	m := viewCountRe.FindStringSubmatch(strings.TrimSpace(s))
 	if m == nil {
 		return 0
 	}
