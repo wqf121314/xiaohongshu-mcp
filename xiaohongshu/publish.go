@@ -74,31 +74,30 @@ func NewPublishImageAction(page *rod.Page) (*PublishAction, error) {
 	}, nil
 }
 
-func (p *PublishAction) Publish(ctx context.Context, content PublishImageContent) error {
+// Publish 发布图文，返回每个话题的关联结果。
+func (p *PublishAction) Publish(ctx context.Context, content PublishImageContent) ([]TopicResult, error) {
 	if len(content.ImagePaths) == 0 {
-		return errors.New("图片不能为空")
+		return nil, errors.New("图片不能为空")
+	}
+	if err := checkTagsLimit(content.Tags); err != nil {
+		return nil, err
 	}
 
 	// 重设超时：.Context(ctx) 会替换掉 NewPublishImageAction 里 Timeout(300s) 的 deadline
 	page := p.page.Context(ctx).Timeout(300 * time.Second)
 
 	if err := uploadImages(page, content.ImagePaths); err != nil {
-		return errors.Wrap(err, "小红书上传图片失败")
+		return nil, errors.Wrap(err, "小红书上传图片失败")
 	}
 
-	tags := content.Tags
-	if len(tags) >= 10 {
-		logrus.Warnf("标签数量超过10，截取前10个标签")
-		tags = tags[:10]
+	logrus.Infof("发布内容: title=%s, images=%v, tags=%v, schedule=%v, original=%v, visibility=%s, products=%v", content.Title, len(content.ImagePaths), content.Tags, content.ScheduleTime, content.IsOriginal, content.Visibility, content.Products)
+
+	topics, err := submitPublish(ctx, page, content.Title, content.Content, content.Tags, content.ScheduleTime, content.IsOriginal, content.Visibility, content.Products)
+	if err != nil {
+		return nil, errors.Wrap(err, "小红书发布失败")
 	}
 
-	logrus.Infof("发布内容: title=%s, images=%v, tags=%v, schedule=%v, original=%v, visibility=%s, products=%v", content.Title, len(content.ImagePaths), tags, content.ScheduleTime, content.IsOriginal, content.Visibility, content.Products)
-
-	if err := submitPublish(ctx, page, content.Title, content.Content, tags, content.ScheduleTime, content.IsOriginal, content.Visibility, content.Products); err != nil {
-		return errors.Wrap(err, "小红书发布失败")
-	}
-
-	return nil
+	return topics, nil
 }
 
 // hasPopCover 当前页面是否还有挡人的浮层。
@@ -345,18 +344,19 @@ func waitForUploadComplete(page *rod.Page, expectedCount int) error {
 	return errors.Errorf("第%d张图片上传超时(60s)，请检查网络连接和图片大小", expectedCount)
 }
 
-func submitPublish(ctx context.Context, page *rod.Page, title, content string, tags []string, scheduleTime *time.Time, isOriginal bool, visibility string, products []string) error {
+// submitPublish 填写并提交图文，返回每个话题的关联结果。
+func submitPublish(ctx context.Context, page *rod.Page, title, content string, tags []string, scheduleTime *time.Time, isOriginal bool, visibility string, products []string) ([]TopicResult, error) {
 	titleElem, err := page.Element("div.d-input input")
 	if err != nil {
-		return errors.Wrap(err, "查找标题输入框失败")
+		return nil, errors.Wrap(err, "查找标题输入框失败")
 	}
 	if err := humanize.Type(ctx, titleElem, title); err != nil {
-		return errors.Wrap(err, "输入标题失败")
+		return nil, errors.Wrap(err, "输入标题失败")
 	}
 
 	humanize.Delay(ctx, humanize.AfterType)
 	if err := checkTitleMaxLength(page); err != nil {
-		return err
+		return nil, err
 	}
 	slog.Info("检查标题长度：通过")
 
@@ -364,56 +364,60 @@ func submitPublish(ctx context.Context, page *rod.Page, title, content string, t
 
 	contentElem, err := getContentElement(page, contentElemTimeout)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := humanize.Type(ctx, contentElem, content); err != nil {
-		return errors.Wrap(err, "输入正文失败")
+		return nil, errors.Wrap(err, "输入正文失败")
 	}
 	closeFeatureGuide(page)
 	if err := waitAndClickTitleInput(titleElem); err != nil {
-		return err
+		return nil, err
 	}
-	if err := inputTags(ctx, contentElem, tags); err != nil {
-		return err
+	topics, err := inputTags(ctx, contentElem, tags)
+	if err != nil {
+		return nil, err
 	}
 
 	humanize.Delay(ctx, humanize.AfterType)
 
 	if err := checkContentMaxLength(page); err != nil {
-		return err
+		return nil, err
 	}
 	slog.Info("检查正文长度：通过")
 
 	if scheduleTime != nil {
 		if err := setSchedulePublish(ctx, page, *scheduleTime); err != nil {
-			return errors.Wrap(err, "设置定时发布失败")
+			return nil, errors.Wrap(err, "设置定时发布失败")
 		}
 		slog.Info("定时发布设置完成", "schedule_time", scheduleTime.Format("2006-01-02 15:04"))
 	}
 
 	if err := setVisibility(page, visibility); err != nil {
-		return errors.Wrap(err, "设置可见范围失败")
+		return nil, errors.Wrap(err, "设置可见范围失败")
 	}
 
 	// 处理原创声明：显式请求了原创但设置失败 → 报错中止，不静默发成非原创（避免"以为原创其实不是"）
 	if isOriginal {
 		if err := setOriginal(page); err != nil {
-			return errors.Wrap(err, "设置原创声明失败（已请求原创，中止发布）")
+			return nil, errors.Wrap(err, "设置原创声明失败（已请求原创，中止发布）")
 		}
 		slog.Info("已声明原创")
 	}
 
 	if err := bindProducts(ctx, page, products); err != nil {
-		return errors.Wrap(err, "绑定商品失败")
+		return nil, errors.Wrap(err, "绑定商品失败")
 	}
 
 	if err := clickPublishButton(page); err != nil {
-		return err
+		return nil, err
 	}
 
 	// 校验发布真的成功：成功后创作平台会跳转离开发布页；未跳转则判定失败，
 	// 消除"点了发布按钮就算成功"的假阳性。
-	return waitPublishSuccess(page, 15*time.Second)
+	if err := waitPublishSuccess(page, 15*time.Second); err != nil {
+		return nil, err
+	}
+	return topics, nil
 }
 
 // waitPublishSuccess 轮询等待发布成功的信号：小红书发布成功后会跳转离开发布表单页
@@ -708,9 +712,10 @@ func findContentElement(page *rod.Page) (*rod.Element, error) {
 	return findTextboxByPlaceholder(page)
 }
 
-func inputTags(ctx context.Context, contentElem *rod.Element, tags []string) error {
+// inputTags 逐个输入话题，返回每个话题是否关联成功。
+func inputTags(ctx context.Context, contentElem *rod.Element, tags []string) ([]TopicResult, error) {
 	if len(tags) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	time.Sleep(1 * time.Second)
@@ -718,65 +723,111 @@ func inputTags(ctx context.Context, contentElem *rod.Element, tags []string) err
 	for i := 0; i < 20; i++ {
 		ka, err := contentElem.KeyActions()
 		if err != nil {
-			return errors.Wrap(err, "创建键盘操作失败")
+			return nil, errors.Wrap(err, "创建键盘操作失败")
 		}
 		if err := ka.Type(input.ArrowDown).Do(); err != nil {
-			return errors.Wrap(err, "按下方向键失败")
+			return nil, errors.Wrap(err, "按下方向键失败")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
 	ka, err := contentElem.KeyActions()
 	if err != nil {
-		return errors.Wrap(err, "创建键盘操作失败")
+		return nil, errors.Wrap(err, "创建键盘操作失败")
 	}
 	if err := ka.Press(input.Enter).Press(input.Enter).Do(); err != nil {
-		return errors.Wrap(err, "按下回车键失败")
+		return nil, errors.Wrap(err, "按下回车键失败")
 	}
 
 	time.Sleep(1 * time.Second)
 
+	results := make([]TopicResult, 0, len(tags))
 	for _, tag := range tags {
-		tag = strings.TrimLeft(tag, "#")
-		if err := inputTag(ctx, contentElem, tag); err != nil {
-			return errors.Wrapf(err, "输入标签[%s]失败", tag)
+		tag = NormalizeTopic(tag)
+		if tag == "" {
+			continue
 		}
+		linked, err := inputTag(ctx, contentElem, tag)
+		if err != nil {
+			return results, errors.Wrapf(err, "输入标签[%s]失败", tag)
+		}
+		results = append(results, TopicResult{Name: tag, Linked: linked})
 	}
-	return nil
+	return results, nil
 }
 
-func inputTag(ctx context.Context, contentElem *rod.Element, tag string) error {
+// inputTag 输入一个话题：联想列表里有同名话题就点选并返回 true，否则按普通文字输入并返回 false。
+func inputTag(ctx context.Context, contentElem *rod.Element, tag string) (bool, error) {
+	page := contentElem.Page()
+
+	// 先开始监听，再输入，避免漏掉页面发出的话题搜索请求
+	capture := startTopicCapture(page)
+	defer capture.stop()
+
 	// 输入 # 触发话题联想
 	if err := humanize.Type(ctx, contentElem, "#"); err != nil {
-		return errors.Wrap(err, "输入#失败")
+		return false, errors.Wrap(err, "输入#失败")
 	}
 	time.Sleep(200 * time.Millisecond) // 技术等待：等联想下拉框弹出
 
 	if err := humanize.Type(ctx, contentElem, tag); err != nil {
-		return errors.Wrap(err, "输入标签内容失败")
+		return false, errors.Wrap(err, "输入标签内容失败")
 	}
 
-	time.Sleep(1 * time.Second) // 技术等待：等联想结果刷新
+	if clickSameTopic(page, capture, tag) {
+		time.Sleep(500 * time.Millisecond) // 技术等待：等标签处理完成
+		return true, nil
+	}
+	return false, humanize.Type(ctx, contentElem, " ")
+}
 
-	page := contentElem.Page()
-	topicContainer, err := page.Element("#creator-editor-topic-container")
-	if err != nil || topicContainer == nil {
-		slog.Warn("未找到标签联想下拉框，直接输入空格", "tag", tag)
-		return humanize.Type(ctx, contentElem, " ")
+// clickSameTopic 在联想列表中点选与 tag 同名的话题；任何一步不成功都只记日志并返回 false。
+func clickSameTopic(page *rod.Page, capture *topicCapture, tag string) bool {
+	topics, err := capture.wait(tag, 3*time.Second)
+	if err != nil {
+		slog.Warn("未取到话题搜索结果，按普通文字输入", "tag", tag, "err", err)
+		return false
 	}
 
-	firstItem, err := topicContainer.Element(".item")
-	if err != nil || firstItem == nil {
-		slog.Warn("未找到标签联想选项，直接输入空格", "tag", tag)
-		return humanize.Type(ctx, contentElem, " ")
+	names := make([]string, len(topics))
+	for i, t := range topics {
+		names[i] = t.Name
+	}
+	idx := PickTopic(tag, names)
+	if idx < 0 {
+		slog.Info("没有同名话题，按普通文字输入", "tag", tag, "candidates", len(names))
+		return false
 	}
 
-	if err := humanize.Click(firstItem); err != nil {
-		return errors.Wrap(err, "点击标签联想选项失败")
+	item, text := findDropdownItem(page, idx, topics[idx])
+	if item == nil {
+		slog.Warn("联想列表对应项与话题名不一致，按普通文字输入", "tag", tag, "index", idx, "item_text", text)
+		return false
 	}
-	slog.Info("成功点击标签联想选项", "tag", tag)
-	time.Sleep(500 * time.Millisecond) // 技术等待：等标签处理完成
-	return nil
+	if err := humanize.Click(item); err != nil {
+		slog.Warn("点击同名话题失败，按普通文字输入", "tag", tag, "err", err)
+		return false
+	}
+	slog.Info("已选中同名话题", "tag", tag)
+	return true
+}
+
+// findDropdownItem 等联想列表渲染出第 idx 项并核对文字，一致则返回该项；同时返回最后读到的文字便于排查。
+func findDropdownItem(page *rod.Page, idx int, topic TopicInfo) (*rod.Element, string) {
+	var text string
+	for i := 0; i < 10; i++ {
+		items, err := page.Elements("#creator-editor-topic-container .item")
+		if err == nil && len(items) > idx {
+			if t, err := items[idx].Text(); err == nil {
+				text = t
+				if MatchDropdownItem(t, topic.Name, topic.ViewsText) {
+					return items[idx], text
+				}
+			}
+		}
+		time.Sleep(150 * time.Millisecond) // 技术等待：等联想列表按最新结果刷新
+	}
+	return nil, text
 }
 
 func findTextboxByPlaceholder(page *rod.Page) (*rod.Element, error) {

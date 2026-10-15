@@ -115,3 +115,103 @@ func TestParseViewCount(t *testing.T) {
 		})
 	}
 }
+
+func TestParseTopicSearchResponse(t *testing.T) {
+	sample := `{"success":true,"code":0,"msg":"成功","data":{"topics":[
+		{"topic_info_dto":{"name":"奥克兰","view_num":948369929,"discuss_num_desc":"9.5亿浏览","id":"a1","link":"https://x/a1","hot_topic":false}},
+		{"topic_info_dto":{"name":"奥克兰生活","view_num":123456789,"discuss_num_desc":"1.2亿浏览","id":"a2","link":"https://x/a2","hot_topic":true}},
+		{"topic_info_dto":{"name":"奥克兰二手","view_num":35000,"discuss_num_desc":"3.5万浏览","id":"a3","link":"https://x/a3","hot_topic":false}}
+	]}}`
+
+	tests := []struct {
+		name    string
+		body    string
+		want    []TopicInfo
+		wantErr bool
+	}{
+		{"正常返回", sample, []TopicInfo{
+			{Name: "奥克兰", Views: 948369929, ViewsText: "9.5亿浏览"},
+			{Name: "奥克兰生活", Views: 123456789, ViewsText: "1.2亿浏览"},
+			{Name: "奥克兰二手", Views: 35000, ViewsText: "3.5万浏览"},
+		}, false},
+		{"空列表", `{"success":true,"code":0,"data":{"topics":[]}}`, []TopicInfo{}, false},
+		{"没有 topics 字段", `{"success":true,"code":0,"data":{}}`, []TopicInfo{}, false},
+		{"非法 JSON", `{"success":tru`, nil, true},
+		{"空 body", ``, nil, true},
+		{"success 为 false", `{"success":false,"code":-1,"msg":"签名错误"}`, nil, true},
+		{"code 非 0", `{"success":true,"code":500,"data":{"topics":[]}}`, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseTopicSearchResponse([]byte(tt.body))
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Nil(t, got)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestTopicSearchKeyword(t *testing.T) {
+	tests := []struct {
+		name     string
+		postData string
+		want     string
+		wantOK   bool
+	}{
+		{"正常请求体", `{"keyword":"奥克兰","topic_round_start_time":1760500000000,"content":""}`, "奥克兰", true},
+		{"关键词为空", `{"keyword":"","content":""}`, "", true},
+		{"没有关键词字段", `{"content":""}`, "", false},
+		{"空请求体", ``, "", false},
+		{"非法 JSON", `keyword=奥克兰`, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := topicSearchKeyword(tt.postData)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantOK, ok)
+		})
+	}
+}
+
+func TestMatchDropdownItem(t *testing.T) {
+	tests := []struct {
+		name      string
+		itemText  string
+		topic     string
+		viewsText string
+		want      bool
+	}{
+		{"带井号和浏览量", "#奥克兰 9.5亿浏览", "奥克兰", "9.5亿浏览", true},
+		{"名字与浏览量换行分开", "#奥克兰\n9.5亿浏览", "奥克兰", "9.5亿浏览", true},
+		{"只有名字", "奥克兰", "奥克兰", "", true},
+		{"只有空白与井号差异", "  # 奥克兰 ", "奥克兰", "9.5亿浏览", true},
+		{"名字含空格", "#New Zealand 1.2亿浏览", "New Zealand", "1.2亿浏览", true},
+		{"更长的名字不算", "#奥克兰二手车 3.5万浏览", "奥克兰二手", "3.5万浏览", false},
+		{"更短的名字不算", "#奥克兰 9.5亿浏览", "奥克兰二手", "9.5亿浏览", false},
+		{"多出标记文字不算", "#奥克兰 热 9.5亿浏览", "奥克兰", "9.5亿浏览", false},
+		{"浏览量写法不同不算", "#奥克兰 9.5亿次浏览", "奥克兰", "9.5亿浏览", false},
+		{"空文字", "", "奥克兰", "9.5亿浏览", false},
+		{"空话题名", "#", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, MatchDropdownItem(tt.itemText, tt.topic, tt.viewsText))
+		})
+	}
+}
+
+func TestTagsLimit(t *testing.T) {
+	ten := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
+	assert.NoError(t, checkTagsLimit(nil))
+	assert.NoError(t, checkTagsLimit([]string{"奥克兰"}))
+	assert.NoError(t, checkTagsLimit(ten))
+
+	err := checkTagsLimit(append(ten, "11"))
+	if assert.Error(t, err) {
+		assert.Equal(t, "话题最多 10 个", err.Error())
+	}
+}

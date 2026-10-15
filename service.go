@@ -56,10 +56,11 @@ type LoginQrcodeResponse struct {
 
 // PublishResponse 发布响应
 type PublishResponse struct {
-	Title   string `json:"title"`
-	Content string `json:"content"`
-	Images  int    `json:"images"`
-	Status  string `json:"status"`
+	Title   string                    `json:"title"`
+	Content string                    `json:"content"`
+	Images  int                       `json:"images"`
+	Status  string                    `json:"status"`
+	Topics  []xiaohongshu.TopicResult `json:"topics"`
 }
 
 // PublishVideoRequest 发布视频请求（仅支持本地单个视频文件）
@@ -249,7 +250,8 @@ func (s *XiaohongshuService) PublishContent(ctx context.Context, req *PublishReq
 		Products:     req.Products,
 	}
 
-	if err := s.publishContent(ctx, content); err != nil {
+	topics, err := s.publishContent(ctx, content)
+	if err != nil {
 		logrus.Errorf("发布内容失败: title=%s %v", content.Title, err)
 		return nil, err
 	}
@@ -259,6 +261,7 @@ func (s *XiaohongshuService) PublishContent(ctx context.Context, req *PublishReq
 		Content: req.Content,
 		Images:  len(imagePaths),
 		Status:  "发布完成",
+		Topics:  topics,
 	}
 
 	return response, nil
@@ -271,7 +274,7 @@ func (s *XiaohongshuService) processImages(images []string) ([]string, error) {
 }
 
 // publishContent 执行内容发布
-func (s *XiaohongshuService) publishContent(ctx context.Context, content xiaohongshu.PublishImageContent) error {
+func (s *XiaohongshuService) publishContent(ctx context.Context, content xiaohongshu.PublishImageContent) ([]xiaohongshu.TopicResult, error) {
 	b := newBrowser()
 	defer b.Close()
 
@@ -280,7 +283,7 @@ func (s *XiaohongshuService) publishContent(ctx context.Context, content xiaohon
 
 	action, err := xiaohongshu.NewPublishImageAction(page)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	return action.Publish(ctx, content)

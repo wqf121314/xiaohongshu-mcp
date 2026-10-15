@@ -60,6 +60,9 @@ func (p *PublishAction) PublishVideo(ctx context.Context, content PublishVideoCo
 	if content.VideoPath == "" {
 		return errors.New("视频不能为空")
 	}
+	if err := checkTagsLimit(content.Tags); err != nil {
+		return err
+	}
 
 	// 重设超时：.Context(ctx) 会替换掉 NewPublishVideoAction 里 Timeout(300s) 的 deadline
 	page := p.page.Context(ctx).Timeout(300 * time.Second)
@@ -127,7 +130,8 @@ func submitPublishVideo(ctx context.Context, page *rod.Page, title, content stri
 	if err := waitAndClickTitleInput(titleElem); err != nil {
 		return err
 	}
-	if err := inputTags(ctx, contentElem, tags); err != nil {
+	// 视频发布暂不报告话题结果
+	if _, err := inputTags(ctx, contentElem, tags); err != nil {
 		return err
 	}
 

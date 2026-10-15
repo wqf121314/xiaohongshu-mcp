@@ -179,7 +179,10 @@ func (s *AppServer) handlePublishContent(ctx context.Context, args map[string]in
 		}
 	}
 
-	resultText := fmt.Sprintf("内容发布成功: %+v", result)
+	resultText := fmt.Sprintf("内容发布成功：%s，图片 %d 张", result.Title, result.Images)
+	if line := xiaohongshu.FormatTopicResults(result.Topics); line != "" {
+		resultText += "\n" + line
+	}
 	return &MCPToolResult{
 		Content: []MCPContent{{
 			Type: "text",
