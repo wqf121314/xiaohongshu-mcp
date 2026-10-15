@@ -2,6 +2,7 @@ package xiaohongshu
 
 import (
 	"encoding/base64"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -32,10 +33,17 @@ type capturedSearch struct {
 // startTopicCapture 开始监听，用完调用 stop。
 func startTopicCapture(page *rod.Page) *topicCapture {
 	c := &topicCapture{page: page, pending: map[proto.NetworkRequestID]capturedSearch{}}
+
+	// 用未取消的 page 先开启 Network 域并让 rod 记下「已开启」，EachEvent 就不会在结束时关闭它。
+	// 否则 stop() 取消 context 后，rod 的 Network.disable 仍会发到 Chrome，但因 ctx 已取消不更新记录，
+	// 之后的话题 EachEvent 以为已开启而不再开启，收不到任何网络事件。
+	if err := (proto.NetworkEnable{}).Call(page); err != nil {
+		slog.Warn("开启网络监听失败", "err", err)
+	}
+
 	p, cancel := page.WithCancel()
 	c.cancel = cancel
 
-	// EachEvent 会自动开启 Network 域，结束时恢复
 	wait := p.EachEvent(
 		func(e *proto.NetworkRequestWillBeSent) {
 			if strings.Contains(e.Request.URL, topicSearchPath) {
@@ -83,6 +91,7 @@ func (c *topicCapture) wait(keyword string, timeout time.Duration) ([]TopicInfo,
 			return c.parse(id)
 		}
 		if time.Now().After(deadline) {
+			// 兜底结果可能不是本次关键词的，安全是因为点击前还会核对联想项文字
 			if id, ok := c.latest(keyword, true); ok {
 				return c.parse(id)
 			}

@@ -804,7 +804,11 @@ func clickSameTopic(page *rod.Page, capture *topicCapture, tag string) bool {
 		slog.Warn("联想列表对应项与话题名不一致，按普通文字输入", "tag", tag, "index", idx, "item_text", text)
 		return false
 	}
-	if err := humanize.Click(item); err != nil {
+	// 限时点击：联想项被隐藏时 WaitInteractable 会一直重试，不能拖住发布
+	clickable := item.Timeout(3 * time.Second)
+	err = humanize.Click(clickable)
+	clickable.CancelTimeout()
+	if err != nil {
 		slog.Warn("点击同名话题失败，按普通文字输入", "tag", tag, "err", err)
 		return false
 	}
