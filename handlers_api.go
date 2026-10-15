@@ -411,3 +411,22 @@ func (s *AppServer) likeNotificationHandler(c *gin.Context) {
 
 	respondSuccess(c, map[string]any{"data": result}, "操作成功")
 }
+
+// searchTopicsHandler 搜索话题及浏览量
+func (s *AppServer) searchTopicsHandler(c *gin.Context) {
+	var req SearchTopicsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "INVALID_REQUEST",
+			"请求参数错误", err.Error())
+		return
+	}
+
+	topics, err := s.xiaohongshuService.SearchTopics(c.Request.Context(), req.Keyword)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "SEARCH_TOPICS_FAILED",
+			"搜索话题失败", err.Error())
+		return
+	}
+
+	respondSuccess(c, map[string]any{"data": topics}, "搜索话题成功")
+}

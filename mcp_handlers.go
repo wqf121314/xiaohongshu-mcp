@@ -179,7 +179,10 @@ func (s *AppServer) handlePublishContent(ctx context.Context, args map[string]in
 		}
 	}
 
-	resultText := fmt.Sprintf("内容发布成功: %+v", result)
+	resultText := fmt.Sprintf("内容发布成功：%s，图片 %d 张", result.Title, result.Images)
+	if line := xiaohongshu.FormatTopicResults(result.Topics); line != "" {
+		resultText += "\n" + line
+	}
 	return &MCPToolResult{
 		Content: []MCPContent{{
 			Type: "text",
@@ -833,4 +836,21 @@ func (s *AppServer) handleLikeNotification(ctx context.Context, commentID string
 	}
 
 	return marshalMCPResult(result, "点赞")
+}
+
+// handleSearchTopics 搜索话题及浏览量
+func (s *AppServer) handleSearchTopics(ctx context.Context, keyword string) *MCPToolResult {
+	logrus.Infof("MCP: 搜索话题 keyword=%s", keyword)
+
+	topics, err := s.xiaohongshuService.SearchTopics(ctx, keyword)
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{Type: "text", Text: "搜索话题失败：" + err.Error()}},
+			IsError: true,
+		}
+	}
+
+	return &MCPToolResult{
+		Content: []MCPContent{{Type: "text", Text: xiaohongshu.FormatTopicList(topics, 20)}},
+	}
 }

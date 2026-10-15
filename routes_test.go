@@ -156,3 +156,25 @@ func TestMCPAcceptsConfiguredBearerToken(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 }
+
+// TestSearchTopicsRegistered 固定 search_topics 的 MCP 工具与 HTTP 路由都已注册。
+func TestSearchTopicsRegistered(t *testing.T) {
+	router := setupRoutes(NewAppServer(NewXiaohongshuService(), ""))
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/mcp",
+		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.True(t, strings.Contains(recorder.Body.String(), `"name":"search_topics"`), "工具 search_topics 应已注册")
+
+	registered := false
+	for _, r := range router.Routes() {
+		if r.Method == http.MethodPost && r.Path == "/api/v1/topics/search" {
+			registered = true
+		}
+	}
+	assert.True(t, registered, "路由 POST /api/v1/topics/search 应已注册")
+}

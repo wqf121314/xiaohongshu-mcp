@@ -124,6 +124,11 @@ type ReplyNotificationArgs struct {
 	Content   string `json:"content" jsonschema:"回复内容"`
 }
 
+// SearchTopicsArgs 搜索话题的参数
+type SearchTopicsArgs struct {
+	Keyword string `json:"keyword" jsonschema:"话题关键词，不带 #，例如 奥克兰二手"`
+}
+
 // InitMCPServer 初始化 MCP Server
 func InitMCPServer(appServer *AppServer) *mcp.Server {
 	// 创建 MCP Server
@@ -548,7 +553,23 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 		}),
 	)
 
-	logrus.Infof("Registered %d MCP tools", 18)
+	// 工具 19: 搜索话题
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "search_topics",
+			Description: "按关键词搜索小红书话题，返回话题名和浏览量（最多 20 个），用于挑选发帖话题。在创作平台发布页输入后会清空，不会发布内容",
+			Annotations: &mcp.ToolAnnotations{
+				Title:        "Search Topics",
+				ReadOnlyHint: true,
+			},
+		},
+		withPanicRecovery("search_topics", func(ctx context.Context, req *mcp.CallToolRequest, args SearchTopicsArgs) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleSearchTopics(ctx, args.Keyword)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	logrus.Infof("Registered %d MCP tools", 19)
 }
 
 // convertToMCPResult 将自定义的 MCPToolResult 转换为官方 SDK 的格式
