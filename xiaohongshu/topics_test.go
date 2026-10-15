@@ -1,6 +1,8 @@
 package xiaohongshu
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -213,5 +215,48 @@ func TestTagsLimit(t *testing.T) {
 	err := checkTagsLimit(append(ten, "11"))
 	if assert.Error(t, err) {
 		assert.Equal(t, "话题最多 10 个", err.Error())
+	}
+}
+
+func TestFormatTopicList(t *testing.T) {
+	many := make([]TopicInfo, 25)
+	for i := range many {
+		many[i] = TopicInfo{Name: "话题" + strconv.Itoa(i+1), ViewsText: "1万浏览"}
+	}
+	manyLines := make([]string, 20)
+	for i := range manyLines {
+		manyLines[i] = "#话题" + strconv.Itoa(i+1) + "（1万浏览）"
+	}
+
+	tests := []struct {
+		name string
+		ts   []TopicInfo
+		max  int
+		want string
+	}{
+		{
+			name: "正常",
+			ts: []TopicInfo{
+				{Name: "奥克兰", Views: 950000000, ViewsText: "9.5亿浏览"},
+				{Name: "奥克兰二手", Views: 12000, ViewsText: "1.2万浏览"},
+			},
+			max:  20,
+			want: "#奥克兰（9.5亿浏览）\n#奥克兰二手（1.2万浏览）",
+		},
+		{name: "nil", ts: nil, max: 20, want: "没有找到相关话题"},
+		{name: "空切片", ts: []TopicInfo{}, max: 20, want: "没有找到相关话题"},
+		{name: "超过上限截断", ts: many, max: 20, want: strings.Join(manyLines, "\n")},
+		{
+			name: "浏览量文字为空",
+			ts:   []TopicInfo{{Name: "奥克兰"}, {Name: "奥克兰租房", ViewsText: "3万浏览"}},
+			max:  20,
+			want: "#奥克兰\n#奥克兰租房（3万浏览）",
+		},
+		{name: "max 不大于 0 不限制", ts: many[:3], max: 0, want: "#话题1（1万浏览）\n#话题2（1万浏览）\n#话题3（1万浏览）"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, FormatTopicList(tt.ts, tt.max))
+		})
 	}
 }

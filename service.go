@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -412,6 +413,22 @@ func (s *XiaohongshuService) SearchFeeds(ctx context.Context, keyword string, fi
 	}
 
 	return response, nil
+}
+
+// SearchTopics 搜索话题及浏览量
+func (s *XiaohongshuService) SearchTopics(ctx context.Context, keyword string) ([]xiaohongshu.TopicInfo, error) {
+	keyword = xiaohongshu.NormalizeTopic(keyword)
+	if keyword == "" {
+		return nil, errors.New("关键词不能为空")
+	}
+
+	b := newBrowser()
+	defer b.Close()
+
+	page := b.NewPage()
+	defer page.Close()
+
+	return xiaohongshu.NewSearchTopicsAction(page).Search(ctx, keyword)
 }
 
 // GetFeedDetail 获取Feed详情

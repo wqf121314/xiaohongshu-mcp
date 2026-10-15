@@ -71,6 +71,25 @@ func FormatTopicResults(rs []TopicResult) string {
 	return "话题：" + strings.Join(items, "；")
 }
 
+// FormatTopicList 把搜索到的话题格式化成每行一个，最多 max 行（max<=0 不限制）。
+func FormatTopicList(ts []TopicInfo, max int) string {
+	if len(ts) == 0 {
+		return "没有找到相关话题"
+	}
+	if max > 0 && len(ts) > max {
+		ts = ts[:max]
+	}
+	lines := make([]string, 0, len(ts))
+	for _, t := range ts {
+		if t.ViewsText == "" {
+			lines = append(lines, "#"+t.Name)
+		} else {
+			lines = append(lines, "#"+t.Name+"（"+t.ViewsText+"）")
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 var viewCountRe = regexp.MustCompile(`^(\d+(?:\.\d+)?)\s*(亿|万|w|W)?\s*(?:次\s*浏览|浏览|次)?$`)
 
 // ParseViewCount 解析浏览量文本，如 "1.2亿次浏览"、"3.4万"、"856次浏览"，认不出返回 0。

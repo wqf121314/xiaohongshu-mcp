@@ -54,6 +54,11 @@ type FeedDetailRequest struct {
 	CommentConfig   *CommentLoadConfig `json:"comment_config,omitempty"`
 }
 
+// SearchTopicsRequest 搜索话题请求
+type SearchTopicsRequest struct {
+	Keyword string `json:"keyword" binding:"required"`
+}
+
 type SearchFeedsRequest struct {
 	Keyword string                   `json:"keyword" binding:"required"`
 	Filters xiaohongshu.FilterOption `json:"filters,omitempty"`
