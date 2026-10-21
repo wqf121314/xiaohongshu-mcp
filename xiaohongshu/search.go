@@ -184,6 +184,10 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 
 	feeds, err := readFeeds(page)
 	if err != nil {
+		// 第一屏就是风控页面时说清楚，调用方据此停止，而不是当作没有结果
+		if mark := detectBlocked(bodyText(base.Timeout(15 * time.Second))); mark != "" {
+			return nil, fmt.Errorf("页面出现「%s」，已停止: %w", mark, err)
+		}
 		return nil, err
 	}
 
@@ -297,7 +301,8 @@ func scrollForMore(ctx context.Context, page *rod.Page, before int, timeout time
 	return false
 }
 
-// bodyText 页面前 3000 个字符，用来识别风控页面。
+// bodyText 页面全部文字，用来识别风控页面。
+// 不截断：翻几页后结果卡片文字很多，验证弹窗、提示条通常在页面末尾。
 func bodyText(page *rod.Page) string {
 	body, err := page.Element("body")
 	if err != nil {
@@ -306,9 +311,6 @@ func bodyText(page *rod.Page) string {
 	text, err := body.Text()
 	if err != nil {
 		return ""
-	}
-	if r := []rune(text); len(r) > 3000 {
-		return string(r[:3000])
 	}
 	return text
 }
