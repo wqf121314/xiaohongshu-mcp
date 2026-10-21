@@ -136,7 +136,8 @@ func (s *AppServer) listFeedsHandler(c *gin.Context) {
 
 // searchFeedsHandler 搜索Feeds
 func (s *AppServer) searchFeedsHandler(c *gin.Context) {
-	var keyword string
+	var keyword, since string
+	var maxPages int
 	var filters xiaohongshu.FilterOption
 
 	switch c.Request.Method {
@@ -150,6 +151,8 @@ func (s *AppServer) searchFeedsHandler(c *gin.Context) {
 		}
 		keyword = searchReq.Keyword
 		filters = searchReq.Filters
+		maxPages = searchReq.MaxPages
+		since = searchReq.Since
 	default:
 		keyword = c.Query("keyword")
 	}
@@ -160,7 +163,14 @@ func (s *AppServer) searchFeedsHandler(c *gin.Context) {
 		return
 	}
 
-	result, err := s.xiaohongshuService.SearchFeeds(c.Request.Context(), keyword, filters)
+	opts, err := xiaohongshu.ParsePageOptions(maxPages, since)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "INVALID_REQUEST",
+			"请求参数错误", err.Error())
+		return
+	}
+
+	result, err := s.xiaohongshuService.SearchFeeds(c.Request.Context(), keyword, opts, filters)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "SEARCH_FEEDS_FAILED",
 			"搜索Feeds失败", err.Error())

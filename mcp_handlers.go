@@ -310,6 +310,17 @@ func (s *AppServer) handleSearchFeeds(ctx context.Context, args SearchFeedsArgs)
 
 	logrus.Infof("MCP: 搜索Feeds - 关键词: %s", args.Keyword)
 
+	opts, err := xiaohongshu.ParsePageOptions(args.MaxPages, args.Since)
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "搜索Feeds失败: " + err.Error(),
+			}},
+			IsError: true,
+		}
+	}
+
 	filter := xiaohongshu.FilterOption{
 		SortBy:      args.Filters.SortBy,
 		NoteType:    args.Filters.NoteType,
@@ -318,7 +329,7 @@ func (s *AppServer) handleSearchFeeds(ctx context.Context, args SearchFeedsArgs)
 		Location:    args.Filters.Location,
 	}
 
-	result, err := s.xiaohongshuService.SearchFeeds(ctx, args.Keyword, filter)
+	result, err := s.xiaohongshuService.SearchFeeds(ctx, args.Keyword, opts, filter)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{
