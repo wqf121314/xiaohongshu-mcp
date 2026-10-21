@@ -26,6 +26,8 @@ type Feed struct {
 	ModelType string   `json:"modelType"`
 	NoteCard  NoteCard `json:"noteCard"`
 	Index     int      `json:"index"`
+	// PublishTime 由 id 换算的发布时间（Unix 毫秒），换算不了时为 0
+	PublishTime int64 `json:"publishTime,omitempty"`
 }
 
 // modelTypeNote 笔记条目的 modelType 取值。
