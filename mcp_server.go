@@ -40,8 +40,10 @@ type PublishVideoArgs struct {
 
 // SearchFeedsArgs 搜索内容的参数
 type SearchFeedsArgs struct {
-	Keyword string       `json:"keyword" jsonschema:"搜索关键词"`
-	Filters FilterOption `json:"filters,omitempty" jsonschema:"筛选选项"`
+	Keyword  string       `json:"keyword" jsonschema:"搜索关键词"`
+	Filters  FilterOption `json:"filters,omitempty" jsonschema:"筛选选项"`
+	MaxPages int          `json:"max_pages,omitempty" jsonschema:"最多读几页（可选），第一屏算 1 页，之后每页向下滚动加载约 20 条；默认 1，上限 5，超过按 5"`
+	Since    string       `json:"since,omitempty" jsonschema:"翻页截止时间（可选），RFC 3339 格式如 2026-01-02T00:00:00+08:00；某页出现早于它的帖子就停止翻页。不填则不限"`
 }
 
 // FilterOption 筛选选项结构体

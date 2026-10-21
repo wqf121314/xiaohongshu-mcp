@@ -34,7 +34,7 @@ func TestLogNormal_noMax(t *testing.T) {
 func TestDefaultProvider_Timing(t *testing.T) {
 	tp := DefaultProvider{}.Timing()
 
-	for _, action := range []Action{AfterClick, AfterType, AfterNavigate, BetweenScroll, BeforeSubmit, BeforeClick, Reading, Keystroke, ClickHold, AfterInteract, PointerSettle} {
+	for _, action := range []Action{AfterClick, AfterType, AfterNavigate, BetweenScroll, BeforeSubmit, BeforeClick, Reading, Keystroke, ClickHold, AfterInteract, PointerSettle, PageTurn} {
 		dist, ok := tp[action]
 		assert.True(t, ok, "缺少动作 %s 的时延分布", action)
 		assert.Greater(t, dist.Max, dist.Min, "%s: Max 应大于 Min", action)

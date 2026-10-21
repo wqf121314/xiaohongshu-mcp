@@ -60,8 +60,10 @@ type SearchTopicsRequest struct {
 }
 
 type SearchFeedsRequest struct {
-	Keyword string                   `json:"keyword" binding:"required"`
-	Filters xiaohongshu.FilterOption `json:"filters,omitempty"`
+	Keyword  string                   `json:"keyword" binding:"required"`
+	Filters  xiaohongshu.FilterOption `json:"filters,omitempty"`
+	MaxPages int                      `json:"max_pages,omitempty"` // 默认 1，上限 5
+	Since    string                   `json:"since,omitempty"`     // RFC 3339
 }
 
 // FeedDetailResponse Feed详情响应

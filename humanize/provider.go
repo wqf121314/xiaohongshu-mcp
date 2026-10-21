@@ -20,6 +20,7 @@ const (
 	ClickHold     Action = "click_hold"
 	AfterInteract Action = "after_interact"
 	PointerSettle Action = "pointer_settle"
+	PageTurn      Action = "page_turn"
 )
 
 type LogNormal struct {
@@ -65,6 +66,8 @@ func (DefaultProvider) Timing() TimingProfile {
 		ClickHold:     {Mu: -2.47, Sigma: 0.33, Min: 45 * time.Millisecond, Max: 250 * time.Millisecond},
 		AfterInteract: {Mu: 0.88, Sigma: 0.30, Min: 2 * time.Second, Max: 3 * time.Second},
 		PointerSettle: {Mu: -1.20, Sigma: 0.35, Min: 200 * time.Millisecond, Max: 1200 * time.Millisecond},
+		// 翻页前停顿 3–6 秒
+		PageTurn: {Mu: 1.44, Sigma: 0.20, Min: 3 * time.Second, Max: 6 * time.Second},
 	}
 }
 

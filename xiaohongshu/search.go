@@ -103,7 +103,25 @@ func NewSearchAction(page *rod.Page) *SearchAction {
 	return &SearchAction{page: pp}
 }
 
+// SearchPage 翻页搜索的结果。
+type SearchPage struct {
+	Feeds         []Feed
+	Pages         int    // 实际读了几页（第一屏算 1 页）
+	ReachedSince  bool   // 是否翻到了早于 Since 的帖子
+	StoppedReason string // 非正常停止的原因（风控、超时），正常为空
+}
+
+// Search 只读第一屏。
 func (s *SearchAction) Search(ctx context.Context, keyword string, filters ...FilterOption) ([]Feed, error) {
+	res, err := s.SearchPaged(ctx, keyword, PageOptions{MaxPages: 1}, filters...)
+	if err != nil {
+		return nil, err
+	}
+	return res.Feeds, nil
+}
+
+// SearchPaged 搜索并向下滚动翻页，停止条件见 shouldStop；遇到风控字样或 ctx 结束时返回已拿到的部分。
+func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts PageOptions, filters ...FilterOption) (*SearchPage, error) {
 	// 先校验筛选取值，必须在导航之前——写错的值不该先向平台发一次请求再报错。
 	pending, err := collectFilters(filters)
 	if err != nil {
@@ -112,7 +130,8 @@ func (s *SearchAction) Search(ctx context.Context, keyword string, filters ...Fi
 
 	// 注意 .Context(ctx) 会替换掉 NewSearchAction 里设的 60s deadline，必须在其后重新 Timeout，
 	// 否则搜索页不 stable 时 MustWaitStable/MustWait 会永久挂起（无 deadline 可依赖）。
-	page := s.page.Context(ctx).Timeout(60 * time.Second)
+	base := s.page.Context(ctx)
+	page := base.Timeout(60 * time.Second)
 
 	searchURL := makeSearchURL(keyword)
 	page.MustNavigate(searchURL)
@@ -163,19 +182,79 @@ func (s *SearchAction) Search(ctx context.Context, keyword string, filters ...Fi
 		waitFeedsChanged(page, before, 15*time.Second)
 	}
 
-	result := page.MustEval(`() => {
-		if (window.__INITIAL_STATE__ &&
-		    window.__INITIAL_STATE__.search &&
-		    window.__INITIAL_STATE__.search.feeds) {
-			const feeds = window.__INITIAL_STATE__.search.feeds;
-			const feedsData = feeds.value !== undefined ? feeds.value : feeds._value;
-			if (feedsData) {
-				return JSON.stringify(feedsData);
+	feeds, err := readFeeds(page)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &SearchPage{Feeds: feeds, Pages: 1}
+	seen := make(map[string]bool, len(feeds))
+	for _, f := range feeds {
+		seen[f.ID] = true
+	}
+
+	newFeeds := feeds
+	for {
+		stop, reached := shouldStop(opts, res.Pages, newFeeds)
+		res.ReachedSince = res.ReachedSince || reached
+		if stop {
+			break
+		}
+
+		humanize.Delay(ctx, humanize.PageTurn)
+		if ctx.Err() != nil {
+			res.StoppedReason = "超时"
+			break
+		}
+
+		// 翻页的每一步单独设 deadline，不和第一屏共用 60s
+		step := base.Timeout(15 * time.Second)
+		grew := scrollForMore(ctx, step, countFeeds(step), 10*time.Second)
+		if mark := detectBlocked(bodyText(step)); mark != "" {
+			res.StoppedReason = "页面出现「" + mark + "」，已停止翻页"
+			break
+		}
+		if ctx.Err() != nil {
+			res.StoppedReason = "超时"
+			break
+		}
+		if !grew {
+			break // 到底了
+		}
+
+		all, err := readFeeds(step)
+		if err != nil {
+			logrus.Warnf("翻页后读取结果失败，返回已拿到的部分: %v", err)
+			break
+		}
+		newFeeds = newFeeds[:0:0]
+		for _, f := range all {
+			if !seen[f.ID] {
+				seen[f.ID] = true
+				newFeeds = append(newFeeds, f)
 			}
 		}
-		return "";
-	}`).String()
+		res.Pages++
+		res.Feeds = append(res.Feeds, newFeeds...)
+	}
 
+	return res, nil
+}
+
+// feedsJS 读当前结果集。
+const feedsJS = `() => {
+	const f = window.__INITIAL_STATE__?.search?.feeds;
+	const v = f ? (f.value !== undefined ? f.value : f._value) : null;
+	return v ? JSON.stringify(v) : "";
+}`
+
+// readFeeds 读当前已加载的全部结果，只留笔记并填上发布时间。
+func readFeeds(page *rod.Page) ([]Feed, error) {
+	res, err := page.Eval(feedsJS)
+	if err != nil {
+		return nil, fmt.Errorf("读取搜索结果失败: %w", err)
+	}
+	result := res.Value.Str()
 	if result == "" {
 		return nil, errors.ErrNoFeeds
 	}
@@ -186,6 +265,52 @@ func (s *SearchAction) Search(ctx context.Context, keyword string, filters ...Fi
 	}
 
 	return withPublishTime(onlyNotes(feeds)), nil
+}
+
+// countFeeds 当前已加载的结果条数（含非笔记条目）。
+func countFeeds(page *rod.Page) int {
+	ids := readFeedIDs(page)
+	if ids == "" {
+		return 0
+	}
+	return strings.Count(ids, ",") + 1
+}
+
+// scrollForMore 用滚轮往下滚，等结果条数超过 before；timeout 内没增加返回 false。
+// 每 2 秒没动静就再滚一次，站点要滚到接近底部才加载下一批。
+func scrollForMore(ctx context.Context, page *rod.Page, before int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	var lastScroll time.Time
+	for time.Now().Before(deadline) && ctx.Err() == nil {
+		if time.Since(lastScroll) >= 2*time.Second {
+			if err := page.Mouse.Scroll(0, 5000, 10); err != nil {
+				logrus.Warnf("翻页滚动失败: %v", err)
+				return false
+			}
+			lastScroll = time.Now()
+		}
+		time.Sleep(300 * time.Millisecond)
+		if countFeeds(page) > before {
+			return true
+		}
+	}
+	return false
+}
+
+// bodyText 页面前 3000 个字符，用来识别风控页面。
+func bodyText(page *rod.Page) string {
+	body, err := page.Element("body")
+	if err != nil {
+		return ""
+	}
+	text, err := body.Text()
+	if err != nil {
+		return ""
+	}
+	if r := []rune(text); len(r) > 3000 {
+		return string(r[:3000])
+	}
+	return text
 }
 
 // feedIDsJS 读当前结果集的 id 列表，用来判断数据有没有换一批。

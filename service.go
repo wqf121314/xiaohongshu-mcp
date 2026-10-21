@@ -85,8 +85,11 @@ type PublishVideoResponse struct {
 
 // FeedsListResponse Feeds列表响应
 type FeedsListResponse struct {
-	Feeds []xiaohongshu.Feed `json:"feeds"`
-	Count int                `json:"count"`
+	Feeds         []xiaohongshu.Feed `json:"feeds"`
+	Count         int                `json:"count"`
+	Pages         int                `json:"pages"`                    // 搜索实际读了几页
+	ReachedSince  bool               `json:"reached_since"`            // 是否翻到了早于 since 的帖子
+	StoppedReason string             `json:"stopped_reason,omitempty"` // 提前停止翻页的原因
 }
 
 // UserProfileResponse 用户主页响应
@@ -393,7 +396,7 @@ func (s *XiaohongshuService) ListFeeds(ctx context.Context) (*FeedsListResponse,
 	return response, nil
 }
 
-func (s *XiaohongshuService) SearchFeeds(ctx context.Context, keyword string, filters ...xiaohongshu.FilterOption) (*FeedsListResponse, error) {
+func (s *XiaohongshuService) SearchFeeds(ctx context.Context, keyword string, opts xiaohongshu.PageOptions, filters ...xiaohongshu.FilterOption) (*FeedsListResponse, error) {
 	b := newBrowser()
 	defer b.Close()
 
@@ -402,14 +405,17 @@ func (s *XiaohongshuService) SearchFeeds(ctx context.Context, keyword string, fi
 
 	action := xiaohongshu.NewSearchAction(page)
 
-	feeds, err := action.Search(ctx, keyword, filters...)
+	res, err := action.SearchPaged(ctx, keyword, opts, filters...)
 	if err != nil {
 		return nil, err
 	}
 
 	response := &FeedsListResponse{
-		Feeds: feeds,
-		Count: len(feeds),
+		Feeds:         res.Feeds,
+		Count:         len(res.Feeds),
+		Pages:         res.Pages,
+		ReachedSince:  res.ReachedSince,
+		StoppedReason: res.StoppedReason,
 	}
 
 	return response, nil
