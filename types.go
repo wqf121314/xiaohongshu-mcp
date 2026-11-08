@@ -64,6 +64,8 @@ type SearchFeedsRequest struct {
 	Filters  xiaohongshu.FilterOption `json:"filters,omitempty"`
 	MaxPages int                      `json:"max_pages,omitempty"` // 默认 1，上限 5
 	Since    string                   `json:"since,omitempty"`     // RFC 3339
+	// 整次搜索最多用几秒，0 表示不限
+	MaxSeconds int `json:"max_seconds,omitempty"`
 }
 
 // FeedDetailResponse Feed详情响应

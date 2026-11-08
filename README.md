@@ -877,7 +877,9 @@ npx mcporter list xiaohongshu-mcp
     - `location`: 位置距离 - `不限`（默认）| `同城` | `附近`
   - `max_pages`: 最多读几页（可选），第一屏算 1 页，之后每页向下滚动加载；默认 1，上限 5
   - `since`: 翻页截止时间（可选），RFC 3339 格式；结果最后 5 条的发布时间中位数早于它就停止翻页（「最新」排序偶尔夹着旧帖，一两条不算）
-  - 返回的每条帖子带 `publishTime`（由笔记 id 换算的发布时间，Unix 毫秒），并返回 `pages`、`reached_since`、`stopped_reason`（遇到验证码等风控页面时提前停止的原因）
+  - `max_seconds`: 整次搜索最多用几秒（可选），从收到请求算起；按已翻过的最慢一页估计，来不及再翻一页时就停止翻页，返回已拿到的结果。适合调用方有超时限制的情况
+  - 返回的每条帖子带 `publishTime`（由笔记 id 换算的发布时间，Unix 毫秒），并返回 `pages`、`reached_since`、`time_limited`（因为 `max_seconds` 没翻满）、`stopped_reason`（遇到验证码等风控页面时提前停止的原因）
+  - 每一步的用时（打开搜索页、切换筛选、每一页）写在日志里，以「搜索用时」开头
 - `get_feed_detail` - 获取帖子详情，包括互动数据和评论（必需：feed_id, xsec_token）
   - `load_all_comments`: 是否加载全部评论（可选），默认 false 仅返回前 10 条一级评论
   - `limit`: 限制加载的一级评论数量（可选），仅当 load_all_comments=true 时生效，默认 20
