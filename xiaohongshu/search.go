@@ -104,11 +104,15 @@ func NewSearchAction(page *rod.Page) *SearchAction {
 	return &SearchAction{page: pp}
 }
 
+// timingRound 日志里的用时精确到 0.1 秒。
+const timingRound = 100 * time.Millisecond
+
 // SearchPage 翻页搜索的结果。
 type SearchPage struct {
 	Feeds         []Feed
 	Pages         int    // 实际读了几页（第一屏算 1 页）
 	ReachedSince  bool   // 结果末尾是否已早于 Since，见 tailTime
+	TimeLimited   bool   // 快到 Deadline、来不及再翻一页而停下，见 outOfTime
 	StoppedReason string // 非正常停止的原因（风控、超时），正常为空
 }
 
@@ -128,6 +132,9 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 	if err != nil {
 		return nil, err
 	}
+	// 每一步的用时写进日志，翻页慢时据此找原因
+	start := time.Now()
+	elapsed := func() time.Duration { return time.Since(start).Round(timingRound) }
 
 	// 注意 .Context(ctx) 会替换掉 NewSearchAction 里设的 60s deadline，必须在其后重新 Timeout，
 	// 否则页面等待没有 deadline 可依赖，异常时会永久挂起。
@@ -143,6 +150,7 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 		return nil, fmt.Errorf("等待搜索结果失败: %w", err)
 	}
 	stop()
+	logrus.Infof("搜索用时：打开搜索页并等到结果 %s", elapsed())
 	humanize.Delay(ctx, humanize.AfterNavigate)
 
 	// 等待结束到读结果之间还有一段延迟（生产环境 600ms~6s）。风控的重定向
@@ -153,6 +161,7 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 	}
 
 	if len(pending) > 0 {
+		filterStart := time.Now()
 		// 悬停在筛选按钮上展开面板
 		filterButton := page.MustElement(`div.filter`)
 		if err := humanize.Hover(filterButton); err != nil {
@@ -198,6 +207,7 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 		if err := moveToViewportCenter(page); err != nil {
 			logrus.Warnf("移出筛选面板失败，翻页可能无效: %v", err)
 		}
+		logrus.Infof("搜索用时：切换筛选 %s", time.Since(filterStart).Round(timingRound))
 	}
 
 	feeds, err := readFeeds(page)
@@ -216,13 +226,20 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 	}
 
 	newFeeds := feeds
+	var slowest time.Duration // 已翻过的页里最慢的一页，用来估计下一页
 	for {
 		stop, reached := shouldStop(opts, res.Pages, res.Feeds, len(newFeeds))
 		res.ReachedSince = res.ReachedSince || reached
 		if stop {
 			break
 		}
+		if outOfTime(opts.Deadline, time.Now(), slowest) {
+			res.TimeLimited = true
+			logrus.Infof("快到时间上限，停止翻页（已翻 %d 页，用时 %s）", res.Pages, elapsed())
+			break
+		}
 
+		turnStart := time.Now()
 		humanize.Delay(ctx, humanize.PageTurn)
 		if ctx.Err() != nil {
 			res.StoppedReason = "超时"
@@ -263,8 +280,12 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 		}
 		res.Pages++
 		res.Feeds = append(res.Feeds, newFeeds...)
+		turn := time.Since(turnStart)
+		slowest = max(slowest, turn)
+		logrus.Infof("搜索用时：第 %d 页 %s", res.Pages, turn.Round(timingRound))
 	}
 
+	logrus.Infof("搜索用时：共 %s，%d 页，%d 条", elapsed(), res.Pages, len(res.Feeds))
 	return res, nil
 }
 

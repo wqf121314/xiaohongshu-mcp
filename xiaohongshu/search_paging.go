@@ -14,14 +14,26 @@ const MaxSearchPages = 5
 
 // PageOptions 搜索翻页选项。
 type PageOptions struct {
-	MaxPages int       // 1..MaxSearchPages
-	Since    time.Time // 结果末尾早于这个时间就停，见 tailTime；零值表示不限
+	MaxPages    int           // 1..MaxSearchPages
+	Since       time.Time     // 结果末尾早于这个时间就停，见 tailTime；零值表示不限
+	MaxDuration time.Duration // 整次搜索最多用多久，0 表示不限；由调用方换算成 Deadline
+	Deadline    time.Time     // 快到这个时间就不再翻页，见 outOfTime；零值表示不限
 }
 
-// ParsePageOptions 校验并规整翻页参数：maxPages 不填按 1，超过上限按上限；since 为 RFC 3339。
-// 在打开浏览器之前调用，写错的参数不该先访问平台再报错。
-func ParsePageOptions(maxPages int, since string) (PageOptions, error) {
-	opts := PageOptions{MaxPages: maxPages}
+// 判断还来不及翻下一页时用：还没翻过页时，下一页按 pageTurnEstimate 估计（翻页前停 3–6 秒，再加载）；
+// closeReserve 留给关浏览器、返回结果。
+const (
+	pageTurnEstimate = 8 * time.Second
+	closeReserve     = 2 * time.Second
+)
+
+// ParsePageOptions 校验并规整翻页参数：maxPages 不填按 1，超过上限按上限；since 为 RFC 3339；
+// maxSeconds 为 0 表示不限。在打开浏览器之前调用，写错的参数不该先访问平台再报错。
+func ParsePageOptions(maxPages int, since string, maxSeconds int) (PageOptions, error) {
+	if maxSeconds < 0 {
+		return PageOptions{}, fmt.Errorf("max_seconds 不能为负数: %d", maxSeconds)
+	}
+	opts := PageOptions{MaxPages: maxPages, MaxDuration: time.Duration(maxSeconds) * time.Second}
 	if opts.MaxPages < 1 {
 		opts.MaxPages = 1
 	}
@@ -36,6 +48,14 @@ func ParsePageOptions(maxPages int, since string) (PageOptions, error) {
 		opts.Since = t
 	}
 	return opts, nil
+}
+
+// outOfTime 判断按目前最慢的一页估计，翻下一页会不会超过 deadline；deadline 为零值时不限。
+func outOfTime(deadline, now time.Time, slowest time.Duration) bool {
+	if deadline.IsZero() {
+		return false
+	}
+	return now.Add(max(slowest, pageTurnEstimate) + closeReserve).After(deadline)
 }
 
 // sinceTail 判断是否翻到 Since 时看结果末尾几条。

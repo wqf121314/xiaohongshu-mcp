@@ -22,29 +22,60 @@ func TestPublishTimeFromID(t *testing.T) {
 }
 
 func TestPageOptionsDefaults(t *testing.T) {
-	opts, err := ParsePageOptions(0, "")
+	opts, err := ParsePageOptions(0, "", 0)
 	if err != nil || opts.MaxPages != 1 || !opts.Since.IsZero() {
 		t.Fatalf("got %+v, %v", opts, err)
 	}
-	if opts, _ := ParsePageOptions(9, ""); opts.MaxPages != MaxSearchPages {
+	if opts, _ := ParsePageOptions(9, "", 0); opts.MaxPages != MaxSearchPages {
 		t.Fatalf("max pages not capped: %d", opts.MaxPages)
 	}
-	if opts, _ := ParsePageOptions(-2, ""); opts.MaxPages != 1 {
+	if opts, _ := ParsePageOptions(-2, "", 0); opts.MaxPages != 1 {
 		t.Fatalf("negative max pages: %d", opts.MaxPages)
 	}
 }
 
 func TestParsePageOptionsSince(t *testing.T) {
-	opts, err := ParsePageOptions(3, "2026-10-13T00:00:00+13:00")
+	opts, err := ParsePageOptions(3, "2026-10-13T00:00:00+13:00", 0)
 	if err != nil || opts.MaxPages != 3 || opts.Since.Unix() != 1791802800 {
 		t.Fatalf("got %+v, %v", opts, err)
 	}
 }
 
 func TestParsePageOptionsRejectsBadSince(t *testing.T) {
-	if _, err := ParsePageOptions(3, "2026-10-13"); err == nil {
+	if _, err := ParsePageOptions(3, "2026-10-13", 0); err == nil {
 		t.Fatal("want error for non-RFC3339 since")
 	}
+}
+
+func TestParsePageOptionsMaxSeconds(t *testing.T) {
+	opts, err := ParsePageOptions(3, "", 50)
+	if err != nil || opts.MaxDuration != 50*time.Second {
+		t.Fatalf("got %+v, %v", opts, err)
+	}
+	if opts, _ := ParsePageOptions(3, "", 0); opts.MaxDuration != 0 {
+		t.Fatalf("0 应该表示不限，got %v", opts.MaxDuration)
+	}
+	if _, err := ParsePageOptions(3, "", -1); err == nil {
+		t.Fatal("want error for negative max_seconds")
+	}
+}
+
+func TestOutOfTime(t *testing.T) {
+	now := time.Date(2026, 11, 8, 20, 0, 0, 0, time.UTC)
+	check := func(name string, deadline time.Time, slowest time.Duration, want bool) {
+		t.Helper()
+		if got := outOfTime(deadline, now, slowest); got != want {
+			t.Errorf("%s: got %v want %v", name, got, want)
+		}
+	}
+	check("no deadline", time.Time{}, time.Hour, false)
+	check("plenty of time", now.Add(30*time.Second), 6*time.Second, false)
+	// 下一页按最慢的一页估计，再留出关浏览器、返回结果的时间
+	check("slowest page would overrun", now.Add(12*time.Second), 11*time.Second, true)
+	// 还没翻过页时按 pageTurnEstimate 估计
+	check("first turn uses estimate", now.Add(pageTurnEstimate+closeReserve-time.Second), 0, true)
+	check("first turn fits", now.Add(pageTurnEstimate+closeReserve+time.Second), 0, false)
+	check("deadline passed", now.Add(-time.Second), 0, true)
 }
 
 func TestShouldStop(t *testing.T) {

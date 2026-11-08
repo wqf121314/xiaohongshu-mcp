@@ -384,6 +384,7 @@ Content-Type: application/json
 **翻页参数说明:**
 - `max_pages` (int, optional): 最多读几页，第一屏算 1 页，之后每页向下滚动加载；默认 1，上限 5
 - `since` (string, optional): RFC 3339 时间；结果最后 5 条的发布时间中位数早于它就停止翻页（「最新」排序偶尔夹着旧帖，一两条不算），格式不对时返回 400
+- `max_seconds` (int, optional): 整次搜索最多用几秒，从收到请求算起；来不及再翻一页时停止翻页并返回已拿到的结果；负数返回 400，不填则不限
 
 **筛选参数说明:**
 - `sort_by` (string, optional): 排序依据，可选值：`综合`(默认) | `最新` | `最多点赞` | `最多评论` | `最多收藏`
@@ -441,7 +442,7 @@ Content-Type: application/json
 **响应字段说明:**
 - 响应结构与"获取 Feeds 列表"接口相同
 - `publishTime`: 由笔记 id 前 8 位换算的发布时间（Unix 毫秒），换算不了时省略
-- `pages`: 实际读了几页；`reached_since`: 结果末尾是否已早于 `since`（判断方法同上）
+- `pages`: 实际读了几页；`reached_since`: 结果末尾是否已早于 `since`（判断方法同上）；`time_limited`: 是否因为快到 `max_seconds` 而没翻满
 - `stopped_reason`: 提前停止翻页的原因（如页面出现验证码），正常时省略；已拿到的帖子照常返回
 - `video`: 视频笔记时有此字段，图文笔记为 null
 ```

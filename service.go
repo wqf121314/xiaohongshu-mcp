@@ -90,6 +90,7 @@ type FeedsListResponse struct {
 	Count         int                `json:"count"`
 	Pages         int                `json:"pages"`                    // 搜索实际读了几页
 	ReachedSince  bool               `json:"reached_since"`            // 结果末尾是否已早于 since
+	TimeLimited   bool               `json:"time_limited"`             // 是否因为快到 max_seconds 而没翻满
 	StoppedReason string             `json:"stopped_reason,omitempty"` // 提前停止翻页的原因
 }
 
@@ -399,11 +400,17 @@ func (s *XiaohongshuService) ListFeeds(ctx context.Context) (*FeedsListResponse,
 }
 
 func (s *XiaohongshuService) SearchFeeds(ctx context.Context, keyword string, opts xiaohongshu.PageOptions, filters ...xiaohongshu.FilterOption) (*FeedsListResponse, error) {
+	// 从收到请求算起，开浏览器的时间也算在内
+	started := time.Now()
+	if opts.MaxDuration > 0 {
+		opts.Deadline = started.Add(opts.MaxDuration)
+	}
 	b := newBrowser()
 	defer b.Close()
 
 	page := b.NewPage()
 	defer page.Close()
+	logrus.Infof("搜索用时：开浏览器 %s", time.Since(started).Round(100*time.Millisecond))
 
 	action := xiaohongshu.NewSearchAction(page)
 
@@ -417,6 +424,7 @@ func (s *XiaohongshuService) SearchFeeds(ctx context.Context, keyword string, op
 		Count:         len(res.Feeds),
 		Pages:         res.Pages,
 		ReachedSince:  res.ReachedSince,
+		TimeLimited:   res.TimeLimited,
 		StoppedReason: res.StoppedReason,
 	}
 
