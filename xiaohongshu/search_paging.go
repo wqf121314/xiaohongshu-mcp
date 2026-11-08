@@ -3,6 +3,7 @@ package xiaohongshu
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +15,7 @@ const MaxSearchPages = 5
 // PageOptions 搜索翻页选项。
 type PageOptions struct {
 	MaxPages int       // 1..MaxSearchPages
-	Since    time.Time // 翻到早于这个时间的帖子就停；零值表示不限
+	Since    time.Time // 结果末尾早于这个时间就停，见 tailTime；零值表示不限
 }
 
 // ParsePageOptions 校验并规整翻页参数：maxPages 不填按 1，超过上限按上限；since 为 RFC 3339。
@@ -37,22 +38,40 @@ func ParsePageOptions(maxPages int, since string) (PageOptions, error) {
 	return opts, nil
 }
 
-// shouldStop 判断读完第 page 页后是否停止翻页；newFeeds 是这一页新增的帖子。
-// 返回的 reachedSince 表示这一页已出现早于 Since 的帖子。
-func shouldStop(opts PageOptions, page int, newFeeds []Feed) (stop bool, reachedSince bool) {
+// sinceTail 判断是否翻到 Since 时看结果末尾几条。
+const sinceTail = 5
+
+// shouldStop 判断读完第 page 页后是否停止翻页；feeds 是目前拿到的全部结果，added 是这一页新增的条数。
+// 返回的 reachedSince 表示结果末尾已早于 Since，见 tailTime。
+func shouldStop(opts PageOptions, page int, feeds []Feed, added int) (stop bool, reachedSince bool) {
 	if !opts.Since.IsZero() {
-		cutoff := opts.Since.UnixMilli()
-		for _, f := range newFeeds {
-			// 时间未知的不参与判断
-			if f.PublishTime > 0 && f.PublishTime < cutoff {
-				return true, true
-			}
+		if t := tailTime(feeds); t > 0 && t < opts.Since.UnixMilli() {
+			return true, true
 		}
 	}
-	if page >= opts.MaxPages || len(newFeeds) == 0 {
+	if page >= opts.MaxPages || added == 0 {
 		return true, false
 	}
 	return false, false
+}
+
+// tailTime 结果最后 sinceTail 条发布时间的中位数，偶数条取较晚的；时间未知的跳过，都未知时返回 0。
+//
+// 「最新」排序并不严格按时间，常夹着几条旧帖。只要出现一条早于 Since 就停的话，
+// 往往第 2 页就停了，max_pages 形同虚设。看末尾中位数，一两条旧帖不会让翻页提前结束，
+// 整页都是旧帖时照样停下。取上中位数是为了少停：宁可多翻一页，也不提前停。
+func tailTime(feeds []Feed) int64 {
+	times := make([]int64, 0, sinceTail)
+	for i := len(feeds) - 1; i >= 0 && len(times) < sinceTail; i-- {
+		if t := feeds[i].PublishTime; t > 0 {
+			times = append(times, t)
+		}
+	}
+	if len(times) == 0 {
+		return 0
+	}
+	slices.Sort(times)
+	return times[len(times)/2]
 }
 
 // blockedMarks 风控页面上的字样。

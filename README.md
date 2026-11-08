@@ -876,7 +876,7 @@ npx mcporter list xiaohongshu-mcp
     - `search_scope`: 搜索范围 - `不限`（默认）| `已看过` | `未看过` | `已关注`
     - `location`: 位置距离 - `不限`（默认）| `同城` | `附近`
   - `max_pages`: 最多读几页（可选），第一屏算 1 页，之后每页向下滚动加载；默认 1，上限 5
-  - `since`: 翻页截止时间（可选），RFC 3339 格式；某页出现早于它的帖子就停止翻页
+  - `since`: 翻页截止时间（可选），RFC 3339 格式；结果最后 5 条的发布时间中位数早于它就停止翻页（「最新」排序偶尔夹着旧帖，一两条不算）
   - 返回的每条帖子带 `publishTime`（由笔记 id 换算的发布时间，Unix 毫秒），并返回 `pages`、`reached_since`、`stopped_reason`（遇到验证码等风控页面时提前停止的原因）
 - `get_feed_detail` - 获取帖子详情，包括互动数据和评论（必需：feed_id, xsec_token）
   - `load_all_comments`: 是否加载全部评论（可选），默认 false 仅返回前 10 条一级评论

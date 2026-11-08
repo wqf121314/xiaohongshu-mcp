@@ -108,7 +108,7 @@ func NewSearchAction(page *rod.Page) *SearchAction {
 type SearchPage struct {
 	Feeds         []Feed
 	Pages         int    // 实际读了几页（第一屏算 1 页）
-	ReachedSince  bool   // 是否翻到了早于 Since 的帖子
+	ReachedSince  bool   // 结果末尾是否已早于 Since，见 tailTime
 	StoppedReason string // 非正常停止的原因（风控、超时），正常为空
 }
 
@@ -217,7 +217,7 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 
 	newFeeds := feeds
 	for {
-		stop, reached := shouldStop(opts, res.Pages, newFeeds)
+		stop, reached := shouldStop(opts, res.Pages, res.Feeds, len(newFeeds))
 		res.ReachedSince = res.ReachedSince || reached
 		if stop {
 			break
