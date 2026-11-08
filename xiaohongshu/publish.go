@@ -2,6 +2,7 @@ package xiaohongshu
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"math/rand"
 	"os"
@@ -370,9 +371,7 @@ func submitPublish(ctx context.Context, page *rod.Page, title, content string, t
 		return nil, errors.Wrap(err, "输入正文失败")
 	}
 	closeFeatureGuide(page)
-	if err := waitAndClickTitleInput(titleElem); err != nil {
-		return nil, err
-	}
+	tryRefocusTitle(page)
 	topics, err := inputTags(ctx, contentElem, tags)
 	if err != nil {
 		return nil, err
@@ -612,15 +611,21 @@ func closeFeatureGuide(page *rod.Page) {
 	slog.Info("已关闭功能引导卡")
 }
 
-// waitAndClickTitleInput 在填写正文后等待 1 秒并回点标题输入框，增强后续交互稳定性
-func waitAndClickTitleInput(titleElem *rod.Element) error {
+// tryRefocusTitle 尝试回点标题输入框，辅助稳定后续交互。
+// 正文输入后重新定位节点，定位与点击共用 5 秒超时；失败只记警告，不中断发布。
+func tryRefocusTitle(page *rod.Page) {
 	slog.Info("正文填写完成，准备等待后回点标题输入框")
 	time.Sleep(1 * time.Second)
+	titleElem, err := page.Timeout(5 * time.Second).Element("div.d-input input")
+	if err != nil {
+		slog.Warn("回点标题输入框失败：未找到标题输入框，跳过该稳定性步骤", "err", err)
+		return
+	}
 	if err := humanize.Click(titleElem); err != nil {
-		return errors.Wrap(err, "回点标题输入框失败")
+		slog.Warn("回点标题输入框失败，跳过该稳定性步骤", "err", err)
+		return
 	}
 	slog.Info("已回点标题输入框，继续后续发布流程")
-	return nil
 }
 
 // 检查标题是否超过最大长度
@@ -774,11 +779,18 @@ func inputTag(ctx context.Context, contentElem *rod.Element, tag string) (bool, 
 		return false, errors.Wrap(err, "输入标签内容失败")
 	}
 
-	if clickSameTopic(page, capture, tag) {
-		time.Sleep(500 * time.Millisecond) // 技术等待：等标签处理完成
-		return true, nil
+	previous, err := contentElem.Elements("a[data-topic]")
+	if err != nil {
+		return false, errors.Wrap(err, "读取编辑器话题失败")
 	}
-	return false, humanize.Type(ctx, contentElem, " ")
+	if !clickSameTopic(page, capture, tag) {
+		return false, humanize.Type(ctx, contentElem, " ")
+	}
+	// 联想项可能在核对后、点击前原位改名，点完再核对编辑器实际插入的话题
+	if err := verifyInsertedTopic(contentElem, len(previous), tag); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // clickSameTopic 在联想列表中点选与 tag 同名的话题；任何一步不成功都只记日志并返回 false。
@@ -832,6 +844,48 @@ func findDropdownItem(page *rod.Page, idx int, topic TopicInfo) (*rod.Element, s
 		time.Sleep(150 * time.Millisecond) // 技术等待：等联想列表按最新结果刷新
 	}
 	return nil, text
+}
+
+// verifyInsertedTopic 确认编辑器新追加了一个话题且与 tag 同名。
+func verifyInsertedTopic(editor *rod.Element, previous int, tag string) error {
+	wait := editor.Timeout(time.Second)
+	defer wait.CancelTimeout()
+	var node *rod.Element
+	for {
+		nodes, err := wait.Elements("a[data-topic]")
+		if err != nil {
+			return errors.Wrap(err, "未确认编辑器插入话题")
+		}
+		if len(nodes) > previous {
+			if len(nodes) != previous+1 {
+				return errors.New("编辑器插入的话题数量不符")
+			}
+			node = nodes[previous]
+			break
+		}
+		select {
+		case <-wait.GetContext().Done():
+			return errors.Wrap(wait.GetContext().Err(), "未确认编辑器插入话题")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	raw, err := node.Attribute("data-topic")
+	if err != nil {
+		return errors.Wrap(err, "读取新话题失败")
+	}
+	if raw == nil {
+		return errors.New("新话题缺少 data-topic")
+	}
+	var topic struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(*raw), &topic); err != nil {
+		return errors.Wrap(err, "解析新话题失败")
+	}
+	if NormalizeTopic(topic.Name) != NormalizeTopic(tag) {
+		return errors.Errorf("插入的话题与请求不符：期望 %q，实际 %q", tag, topic.Name)
+	}
+	return nil
 }
 
 func findTextboxByPlaceholder(page *rod.Page) (*rod.Element, error) {
