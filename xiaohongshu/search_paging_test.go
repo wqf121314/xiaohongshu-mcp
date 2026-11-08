@@ -4,6 +4,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/xpzouying/xiaohongshu-mcp/configs"
 )
 
 func TestPublishTimeFromID(t *testing.T) {
@@ -26,7 +28,7 @@ func TestPageOptionsDefaults(t *testing.T) {
 	if err != nil || opts.MaxPages != 1 || !opts.Since.IsZero() {
 		t.Fatalf("got %+v, %v", opts, err)
 	}
-	if opts, _ := ParsePageOptions(9, "", 0); opts.MaxPages != MaxSearchPages {
+	if opts, _ := ParsePageOptions(9, "", 0); opts.MaxPages != configs.DefaultMaxSearchPages {
 		t.Fatalf("max pages not capped: %d", opts.MaxPages)
 	}
 	if opts, _ := ParsePageOptions(-2, "", 0); opts.MaxPages != 1 {
@@ -124,5 +126,21 @@ func TestDetectBlocked(t *testing.T) {
 	}
 	if detectBlocked("闲置 搜索结果") != "" {
 		t.Fatal("false positive")
+	}
+}
+
+func TestParsePageOptionsUsesConfiguredLimit(t *testing.T) {
+	t.Cleanup(func() { _ = configs.SetMaxSearchPages(configs.DefaultMaxSearchPages) })
+	if err := configs.SetMaxSearchPages(10); err != nil {
+		t.Fatal(err)
+	}
+	if opts, _ := ParsePageOptions(0, "", 0); opts.MaxPages != 1 {
+		t.Fatalf("default pages changed: %d", opts.MaxPages)
+	}
+	if opts, _ := ParsePageOptions(11, "", 0); opts.MaxPages != 10 {
+		t.Fatalf("want 10, got %d", opts.MaxPages)
+	}
+	if opts, _ := ParsePageOptions(10, "", 0); opts.MaxPages != 10 {
+		t.Fatalf("want 10, got %d", opts.MaxPages)
 	}
 }

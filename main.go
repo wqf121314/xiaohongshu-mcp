@@ -15,19 +15,25 @@ var version = "dev"
 
 func main() {
 	var (
-		headless bool
-		port     string
-		token    string
+		headless       bool
+		port           string
+		token          string
+		maxSearchPages int
 	)
 	flag.BoolVar(&headless, "headless", true, "是否无头模式")
 	flag.StringVar(&port, "port", ":18060", "端口")
 	flag.StringVar(&token, "token", "", "鉴权 Token，留空则读取 AUTH_TOKEN")
+	flag.IntVar(&maxSearchPages, "max-search-pages", configs.DefaultMaxSearchPages, "单次搜索最多翻几页（第一屏算 1 页）")
 	flag.Parse()
+	if err := configs.SetMaxSearchPages(maxSearchPages); err != nil {
+		logrus.Fatalf("%v", err)
+	}
 	if token == "" {
 		token = os.Getenv("AUTH_TOKEN")
 	}
 
 	logrus.Infof("xiaohongshu-mcp version: %s", version)
+	logrus.Infof("max search pages: %d", configs.MaxSearchPages())
 
 	// 只用内置浏览器。启动时就备好，缺它直接退出，不拖到第一个请求才失败。
 	binPath, err := browser.EnsureBrowser()
