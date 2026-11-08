@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	// urlOfPublishImage 图文发布页，「文字配图」入口在这里
-	urlOfPublishImage = `https://creator.xiaohongshu.com/publish/publish?from=menu&target=image`
+	// pathOfPublishImage 图文发布页，「文字配图」入口在这里
+	pathOfPublishImage = `/publish/publish?from=menu&target=image`
 
 	// textImageEntrySelector 「文字配图」入口的候选元素，按文字精确匹配
 	textImageEntrySelector = `button, span, div`
@@ -36,10 +36,16 @@ func NewSearchTopicsAction(page *rod.Page) *SearchTopicsAction {
 func (a *SearchTopicsAction) Search(ctx context.Context, keyword string) ([]TopicInfo, error) {
 	page := a.page.Context(ctx).Timeout(90 * time.Second)
 
-	if err := ensureCreatorSession(page); err != nil {
+	// rednote 的「文字配图」是「写文字」卡片编辑器：输入 # 不联想话题，还会自动保存草稿
+	if siteOf(page) == siteRednote {
+		return nil, errors.New("rednote 创作平台不支持查话题")
+	}
+
+	creator, err := ensureCreatorSession(page)
+	if err != nil {
 		return nil, err
 	}
-	if err := page.Navigate(urlOfPublishImage); err != nil {
+	if err := page.Navigate(creator + pathOfPublishImage); err != nil {
 		return nil, errors.Wrap(err, "打开发布页失败")
 	}
 	if err := page.WaitLoad(); err != nil {

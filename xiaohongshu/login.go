@@ -9,6 +9,9 @@ import (
 	"github.com/pkg/errors"
 )
 
+// qrcodeTimeout 等登录二维码出现的上限
+const qrcodeTimeout = 20 * time.Second
+
 type LoginAction struct {
 	page *rod.Page
 }
@@ -99,7 +102,17 @@ func (a *LoginAction) FetchQrcodeImage(ctx context.Context) (string, bool, error
 		return "", true, nil
 	}
 
-	src, err := pp.MustElement(".login-container .qrcode-img").Attribute("src")
+	// 海外会被跳到 rednote：首页不弹登录框，要去登录页取码
+	if info, err := pp.Info(); err == nil && isRednoteURL(info.URL) {
+		pp.MustNavigate(siteRednote.www + "/login").MustWaitLoad()
+	}
+
+	// 等二维码要有上限：页面结构变了或被拦截时不能一直挂着
+	el, err := pp.Timeout(qrcodeTimeout).Element(".login-container .qrcode-img")
+	if err != nil {
+		return "", false, errors.Wrap(err, "页面上没有找到登录二维码")
+	}
+	src, err := el.CancelTimeout().Attribute("src")
 	if err != nil {
 		return "", false, errors.Wrap(err, "get qrcode src failed")
 	}

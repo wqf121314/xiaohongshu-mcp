@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -98,7 +97,7 @@ func watchSearchResponses(page *rod.Page, keyword string) (<-chan searchResponse
 
 func isSearchNotesURL(raw string) bool {
 	u, err := url.Parse(raw)
-	if err != nil || !strings.HasSuffix(u.Hostname(), ".xiaohongshu.com") {
+	if err != nil || !isSiteAPIHost(u.Hostname()) {
 		return false
 	}
 	return u.Path == "/api/sns/web/v1/search/notes" || u.Path == "/api/sns/web/v2/search/notes"

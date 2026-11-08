@@ -22,6 +22,9 @@ func TestClassifyBlockedPath(t *testing.T) {
 		{"未知的登录子页归为登录", "/website-login/verify", errors.ErrLoginRequired},
 		{"前缀相同但不是同一路径", "/website-loginX", nil},
 		{"大小写敏感（站点固定小写）", "/WEBSITE-LOGIN/CAPTCHA", nil},
+		{"rednote 登录页", "/login", errors.ErrLoginRequired},
+		{"rednote 登录页尾斜杠", "/login/", errors.ErrLoginRequired},
+		{"rednote 登录页前缀相同但不是同一路径", "/loginX", nil},
 		{"搜索结果页", "/search_result", nil},
 		{"首页", "/explore", nil},
 		{"空路径", "", nil},
@@ -58,6 +61,11 @@ func TestClassifyBlockedURL(t *testing.T) {
 		{
 			name: "登录页 redirectPath 指向验证页（完整地址）",
 			url:  "https://www.xiaohongshu.com/website-login/?redirectPath=https%3A%2F%2Fwww.xiaohongshu.com%2Fwebsite-login%2Fcaptcha",
+			want: errors.ErrLoginRequired,
+		},
+		{
+			name: "实采的 rednote 登录页",
+			url:  "https://www.rednote.com/login?redirectPath=http%3A%2F%2Fwww.rednote.com%2Fexplore%3FexSource%3Dnull",
 			want: errors.ErrLoginRequired,
 		},
 		{

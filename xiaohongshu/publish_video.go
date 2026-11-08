@@ -28,11 +28,12 @@ type PublishVideoContent struct {
 func NewPublishVideoAction(page *rod.Page) (*PublishAction, error) {
 	pp := page.Timeout(300 * time.Second)
 
-	if err := ensureCreatorSession(pp); err != nil {
+	creator, err := ensureCreatorSession(pp)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := pp.Navigate(urlOfPublic); err != nil {
+	if err := pp.Navigate(creator + pathOfPublic); err != nil {
 		return nil, errors.Wrap(err, "导航到发布页面失败")
 	}
 

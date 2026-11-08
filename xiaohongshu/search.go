@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/xiaohongshu-mcp/errors"
 	"github.com/xpzouying/xiaohongshu-mcp/humanize"
@@ -136,7 +137,7 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 	// 导航前订阅，避免漏掉很快完成的首屏搜索响应。
 	responses, stop := watchSearchResponses(page, keyword)
 	defer stop()
-	searchURL := makeSearchURL(keyword)
+	searchURL := makeSearchURL(siteOf(page).www, keyword)
 	page.MustNavigate(searchURL)
 	if err := waitSearchReady(page, keyword, responses); err != nil {
 		return nil, fmt.Errorf("等待搜索结果失败: %w", err)
@@ -192,6 +193,11 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 		}
 
 		waitFeedsChanged(page, before, 15*time.Second)
+
+		// 指针还停在筛选浮层上，滚轮会落在浮层里，翻页时页面不动。移回结果区。
+		if err := moveToViewportCenter(page); err != nil {
+			logrus.Warnf("移出筛选面板失败，翻页可能无效: %v", err)
+		}
 	}
 
 	feeds, err := readFeeds(page)
@@ -299,6 +305,16 @@ func countFeeds(page *rod.Page) int {
 		return 0
 	}
 	return strings.Count(ids, ",") + 1
+}
+
+// moveToViewportCenter 把指针移到可视区中间，那里是结果列表。
+func moveToViewportCenter(page *rod.Page) error {
+	m, err := (proto.PageGetLayoutMetrics{}).Call(page)
+	if err != nil {
+		return err
+	}
+	v := m.CSSLayoutViewport
+	return humanize.MoveTo(page, proto.Point{X: float64(v.ClientWidth) / 2, Y: float64(v.ClientHeight) * 0.6})
 }
 
 // scrollForMore 用滚轮往下滚，等结果条数超过 before；timeout 内没增加返回 false。
@@ -445,7 +461,8 @@ func findFilterOption(page *rod.Page, pf pendingFilter) (*rod.Element, error) {
 	return nil, fmt.Errorf("筛选面板里没有「%s」这一组", pf.group)
 }
 
-func makeSearchURL(keyword string) string {
+// makeSearchURL 拼搜索页地址。搜索页不会被跳到 rednote，要按账号所在站点传 base。
+func makeSearchURL(base, keyword string) string {
 
 	values := url.Values{}
 	values.Set("keyword", keyword)
@@ -453,5 +470,5 @@ func makeSearchURL(keyword string) string {
 
 	//https://www.xiaohongshu.com/search_result?keyword=%25E7%258E%258B%25E5%25AD%2590&source=web_search_result_notes
 	//https://www.xiaohongshu.com/search_result?keyword=%25E7%258E%258B%25E5%25AD%2590&source=web_explore_feed
-	return fmt.Sprintf("https://www.xiaohongshu.com/search_result?%s", values.Encode())
+	return fmt.Sprintf("%s/search_result?%s", base, values.Encode())
 }

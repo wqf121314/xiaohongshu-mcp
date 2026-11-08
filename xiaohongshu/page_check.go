@@ -17,6 +17,8 @@ const (
 	captchaPath = "/website-login/captcha"
 	// loginPath 登录页：未登录或登录态已失效。
 	loginPath = "/website-login"
+	// rednoteLoginPath rednote 的登录页（海外被跳到 rednote 时）。
+	rednoteLoginPath = "/login"
 )
 
 // classifyBlockedPath 按路径判断页面是否被风控拦截。
@@ -30,7 +32,8 @@ func classifyBlockedPath(path string) error {
 	switch {
 	case path == captchaPath, strings.HasPrefix(path, captchaPath+"/"):
 		return errors.ErrVerificationRequired
-	case path == loginPath, strings.HasPrefix(path, loginPath+"/"):
+	case path == loginPath, strings.HasPrefix(path, loginPath+"/"),
+		path == rednoteLoginPath, strings.HasPrefix(path, rednoteLoginPath+"/"):
 		return errors.ErrLoginRequired
 	}
 	return nil
