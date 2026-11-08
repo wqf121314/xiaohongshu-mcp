@@ -1,6 +1,7 @@
 package xiaohongshu
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -52,21 +53,35 @@ func TestShouldStop(t *testing.T) {
 	newer := Feed{PublishTime: since.Add(time.Hour).UnixMilli()}
 	older := Feed{PublishTime: since.Add(-time.Hour).UnixMilli()}
 	unknown := Feed{PublishTime: 0}
+	n := func(f Feed, count int) []Feed { return slices.Repeat([]Feed{f}, count) }
+	join := func(parts ...[]Feed) []Feed { return slices.Concat(parts...) }
 
-	check := func(name string, opts PageOptions, page int, feeds []Feed, wantStop, wantReached bool) {
+	// feeds 是目前拿到的全部结果，added 是最后一页新增的条数
+	check := func(name string, opts PageOptions, page int, feeds []Feed, added int, wantStop, wantReached bool) {
 		t.Helper()
-		stop, reached := shouldStop(opts, page, feeds)
+		stop, reached := shouldStop(opts, page, feeds, added)
 		if stop != wantStop || reached != wantReached {
 			t.Errorf("%s: got (%v,%v) want (%v,%v)", name, stop, reached, wantStop, wantReached)
 		}
 	}
-	check("all newer, more pages", opts, 1, []Feed{newer}, false, false)
-	check("contains older", opts, 1, []Feed{newer, older}, true, true)
-	check("max pages", opts, 3, []Feed{newer}, true, false)
-	check("no new feeds", opts, 2, nil, true, false)
-	check("unknown time ignored", opts, 1, []Feed{unknown}, false, false)
-	check("no since", PageOptions{MaxPages: 3}, 1, []Feed{older}, false, false)
-	check("single page", PageOptions{MaxPages: 1}, 1, []Feed{newer}, true, false)
+	check("all newer, more pages", opts, 1, n(newer, 20), 20, false, false)
+	// 「最新」排序夹着零星旧帖：末尾 5 条里 2 条旧帖，中位数仍晚于 since
+	check("scattered older keeps paging", opts, 2,
+		join(n(newer, 20), n(newer, 15), []Feed{older, newer, newer, older, newer}), 20, false, false)
+	check("whole page older stops", opts, 2, join(n(newer, 20), n(older, 20)), 20, true, true)
+	check("first page all older stops", opts, 1, n(older, 20), 20, true, true)
+	check("3 of last 5 older stops", opts, 2,
+		join(n(newer, 35), []Feed{older, newer, older, newer, older}), 20, true, true)
+	// 偶数条取较晚的那个，和"上中位数"一致
+	check("even tail takes later middle", opts, 1, []Feed{older, older, newer, newer}, 4, false, false)
+	check("unknown time skipped in tail", opts, 2, join(n(older, 20), n(unknown, 5)), 5, true, true)
+	check("all unknown keeps paging", opts, 1, n(unknown, 20), 20, false, false)
+	check("max pages", opts, 3, n(newer, 60), 20, true, false)
+	check("max pages and older", opts, 3, join(n(newer, 40), n(older, 20)), 20, true, true)
+	check("no new feeds", opts, 2, n(newer, 20), 0, true, false)
+	check("no since", PageOptions{MaxPages: 3}, 1, n(older, 20), 20, false, false)
+	check("no since, max pages", PageOptions{MaxPages: 3}, 3, n(older, 60), 20, true, false)
+	check("single page", PageOptions{MaxPages: 1}, 1, n(newer, 20), 20, true, false)
 }
 
 func TestDetectBlocked(t *testing.T) {

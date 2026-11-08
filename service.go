@@ -89,7 +89,7 @@ type FeedsListResponse struct {
 	Feeds         []xiaohongshu.Feed `json:"feeds"`
 	Count         int                `json:"count"`
 	Pages         int                `json:"pages"`                    // 搜索实际读了几页
-	ReachedSince  bool               `json:"reached_since"`            // 是否翻到了早于 since 的帖子
+	ReachedSince  bool               `json:"reached_since"`            // 结果末尾是否已早于 since
 	StoppedReason string             `json:"stopped_reason,omitempty"` // 提前停止翻页的原因
 }
 
