@@ -23,7 +23,7 @@ func main() {
 	flag.BoolVar(&headless, "headless", true, "是否无头模式")
 	flag.StringVar(&port, "port", ":18060", "端口")
 	flag.StringVar(&token, "token", "", "鉴权 Token，留空则读取 AUTH_TOKEN")
-	flag.IntVar(&maxSearchPages, "max-search-pages", configs.DefaultMaxSearchPages, "单次搜索最多翻几页（第一屏算 1 页）")
+	flag.IntVar(&maxSearchPages, "max-search-pages", configs.DefaultMaxSearchPages, "单次搜索最多翻几页（第一屏算 1 页），至少为 1")
 	flag.Parse()
 	if err := configs.SetMaxSearchPages(maxSearchPages); err != nil {
 		logrus.Fatalf("%v", err)

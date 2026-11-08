@@ -114,6 +114,9 @@ func TestShouldStop(t *testing.T) {
 	check("no new feeds", opts, 2, n(newer, 20), 0, true, false)
 	check("no since", PageOptions{MaxPages: 3}, 1, n(older, 20), 20, false, false)
 	check("no since, max pages", PageOptions{MaxPages: 3}, 3, n(older, 60), 20, true, false)
+	check("max 10, page 10 stops", PageOptions{MaxPages: 10, Since: since}, 10, n(newer, 200), 20, true, false)
+	check("max 10, page 4 older tail stops", PageOptions{MaxPages: 10, Since: since}, 4, join(n(newer, 60), n(older, 20)), 20, true, true)
+	check("max 10, page 4 newer continues", PageOptions{MaxPages: 10, Since: since}, 4, n(newer, 80), 20, false, false)
 	check("single page", PageOptions{MaxPages: 1}, 1, n(newer, 20), 20, true, false)
 }
 
