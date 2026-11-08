@@ -23,6 +23,10 @@ curl http://localhost:18060/api/v1/login/status \
 
 Token 缺失或无效时，接口返回 HTTP `401 Unauthorized`。命令行参数可能被进程列表看到，部署环境优先使用 `AUTH_TOKEN`。
 
+## 启动参数
+
+启动参数 `-max-search-pages` 设定搜索翻页上限，默认 5，至少为 1。
+
 ## 通用响应格式
 
 所有 API 响应都使用统一的 JSON 格式：
@@ -382,7 +386,7 @@ Content-Type: application/json
 ```
 
 **翻页参数说明:**
-- `max_pages` (int, optional): 最多读几页，第一屏算 1 页，之后每页向下滚动加载；默认 1，上限 5
+- `max_pages` (int, optional): 最多读几页，第一屏算 1 页，之后每页向下滚动加载；默认 1；超过上限按上限处理，上限由启动参数 -max-search-pages 决定（默认 5）
 - `since` (string, optional): RFC 3339 时间；结果最后 5 条的发布时间中位数早于它就停止翻页（「最新」排序偶尔夹着旧帖，一两条不算），格式不对时返回 400
 - `max_seconds` (int, optional): 整次搜索最多用几秒，从收到请求算起；来不及再翻一页时停止翻页并返回已拿到的结果；负数返回 400，不填则不限
 

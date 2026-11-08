@@ -453,6 +453,14 @@ go run .
 go run . -headless=false
 ```
 
+**其他启动参数**：
+
+- `-max-search-pages`：单次搜索最多翻几页，默认 5，至少为 1
+
+```bash
+./xiaohongshu-mcp-darwin-arm64 -max-search-pages=10
+```
+
 **配置代理（可选）**：
 
 如果需要通过代理访问，可以设置 `XHS_PROXY` 环境变量：
@@ -875,7 +883,7 @@ npx mcporter list xiaohongshu-mcp
     - `publish_time`: 发布时间 - `不限`（默认）| `一天内` | `一周内` | `半年内`
     - `search_scope`: 搜索范围 - `不限`（默认）| `已看过` | `未看过` | `已关注`
     - `location`: 位置距离 - `不限`（默认）| `同城` | `附近`
-  - `max_pages`: 最多读几页（可选），第一屏算 1 页，之后每页向下滚动加载；默认 1，上限 5
+  - `max_pages`: 最多读几页（可选），第一屏算 1 页，之后每页向下滚动加载；默认 1；超过上限按上限处理，上限由启动参数 -max-search-pages 决定（默认 5）
   - `since`: 翻页截止时间（可选），RFC 3339 格式；结果最后 5 条的发布时间中位数早于它就停止翻页（「最新」排序偶尔夹着旧帖，一两条不算）
   - `max_seconds`: 整次搜索最多用几秒（可选），从收到请求算起；按已翻过的最慢一页估计，来不及再翻一页时就停止翻页，返回已拿到的结果。适合调用方有超时限制的情况
   - 返回的每条帖子带 `publishTime`（由笔记 id 换算的发布时间，Unix 毫秒），并返回 `pages`、`reached_since`、`time_limited`（因为 `max_seconds` 没翻满）、`stopped_reason`（遇到验证码等风控页面时提前停止的原因）

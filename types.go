@@ -62,7 +62,7 @@ type SearchTopicsRequest struct {
 type SearchFeedsRequest struct {
 	Keyword  string                   `json:"keyword" binding:"required"`
 	Filters  xiaohongshu.FilterOption `json:"filters,omitempty"`
-	MaxPages int                      `json:"max_pages,omitempty"` // 默认 1，上限 5
+	MaxPages int                      `json:"max_pages,omitempty"` // 默认 1，上限见 -max-search-pages
 	Since    string                   `json:"since,omitempty"`     // RFC 3339
 	// 整次搜索最多用几秒，0 表示不限
 	MaxSeconds int `json:"max_seconds,omitempty"`
