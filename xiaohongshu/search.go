@@ -129,15 +129,27 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 	}
 
 	// 注意 .Context(ctx) 会替换掉 NewSearchAction 里设的 60s deadline，必须在其后重新 Timeout，
-	// 否则搜索页不 stable 时 MustWaitStable/MustWait 会永久挂起（无 deadline 可依赖）。
+	// 否则页面等待没有 deadline 可依赖，异常时会永久挂起。
 	base := s.page.Context(ctx)
 	page := base.Timeout(60 * time.Second)
 
+	// 导航前订阅，避免漏掉很快完成的首屏搜索响应。
+	responses, stop := watchSearchResponses(page, keyword)
+	defer stop()
 	searchURL := makeSearchURL(keyword)
 	page.MustNavigate(searchURL)
-	page.MustWaitStable()
-	page.MustWait(`() => window.__INITIAL_STATE__ !== undefined`)
+	if err := waitSearchReady(page, keyword, responses); err != nil {
+		return nil, fmt.Errorf("等待搜索结果失败: %w", err)
+	}
+	stop()
 	humanize.Delay(ctx, humanize.AfterNavigate)
+
+	// 等待结束到读结果之间还有一段延迟（生产环境 600ms~6s）。风控的重定向
+	// 可能正好落在这段窗口里：结果此时已经就绪，但页面已经被换掉。
+	// 这里再判一次，避免后面读到空结果，或筛选交互在验证页上死等。
+	if blocked := CheckPageBlocked(page); blocked != nil {
+		return nil, blocked
+	}
 
 	if len(pending) > 0 {
 		// 悬停在筛选按钮上展开面板
@@ -214,6 +226,11 @@ func (s *SearchAction) SearchPaged(ctx context.Context, keyword string, opts Pag
 		// 翻页的每一步单独设 deadline，不和第一屏共用 60s
 		step := base.Timeout(15 * time.Second)
 		grew := scrollForMore(ctx, step, countFeeds(step), 10*time.Second)
+		// 翻页中被重定向到验证页或登录页时，页面上不一定有风控字样
+		if blocked := CheckPageBlocked(step); blocked != nil {
+			res.StoppedReason = blocked.Error()
+			break
+		}
 		if mark := detectBlocked(bodyText(step)); mark != "" {
 			res.StoppedReason = "页面出现「" + mark + "」，已停止翻页"
 			break
@@ -260,6 +277,10 @@ func readFeeds(page *rod.Page) ([]Feed, error) {
 	}
 	result := res.Value.Str()
 	if result == "" {
+		// 跳转若发生在筛选交互期间，ErrNoFeeds 同样会把真正原因盖掉。
+		if blocked := CheckPageBlocked(page); blocked != nil {
+			return nil, blocked
+		}
 		return nil, errors.ErrNoFeeds
 	}
 
