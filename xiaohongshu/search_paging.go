@@ -7,14 +7,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
-)
 
-// MaxSearchPages 单次搜索最多翻几页（第一屏算 1 页）。
-const MaxSearchPages = 5
+	"github.com/xpzouying/xiaohongshu-mcp/configs"
+)
 
 // PageOptions 搜索翻页选项。
 type PageOptions struct {
-	MaxPages    int           // 1..MaxSearchPages
+	MaxPages    int           // 1..configs.MaxSearchPages()
 	Since       time.Time     // 结果末尾早于这个时间就停，见 tailTime；零值表示不限
 	MaxDuration time.Duration // 整次搜索最多用多久，0 表示不限；由调用方换算成 Deadline
 	Deadline    time.Time     // 快到这个时间就不再翻页，见 outOfTime；零值表示不限
@@ -37,8 +36,8 @@ func ParsePageOptions(maxPages int, since string, maxSeconds int) (PageOptions, 
 	if opts.MaxPages < 1 {
 		opts.MaxPages = 1
 	}
-	if opts.MaxPages > MaxSearchPages {
-		opts.MaxPages = MaxSearchPages
+	if limit := configs.MaxSearchPages(); opts.MaxPages > limit {
+		opts.MaxPages = limit
 	}
 	if since = strings.TrimSpace(since); since != "" {
 		t, err := time.Parse(time.RFC3339, since)

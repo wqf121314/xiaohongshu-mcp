@@ -44,7 +44,7 @@ type PublishVideoArgs struct {
 type SearchFeedsArgs struct {
 	Keyword    string       `json:"keyword" jsonschema:"搜索关键词"`
 	Filters    FilterOption `json:"filters,omitempty" jsonschema:"筛选选项"`
-	MaxPages   int          `json:"max_pages,omitempty" jsonschema:"最多读几页（可选），第一屏算 1 页，之后每页向下滚动加载约 20 条；默认 1，上限 5，超过按 5"`
+	MaxPages   int          `json:"max_pages,omitempty" jsonschema:"最多读几页（可选），第一屏算 1 页，之后每页向下滚动加载约 20 条；默认 1；超过上限按上限处理，上限由启动参数 -max-search-pages 决定"`
 	Since      string       `json:"since,omitempty" jsonschema:"翻页截止时间（可选），RFC 3339 格式如 2026-01-02T00:00:00+08:00；结果最后 5 条的发布时间中位数早于它就停止翻页（「最新」排序偶尔夹着旧帖，一两条不算）。不填则不限"`
 	MaxSeconds int          `json:"max_seconds,omitempty" jsonschema:"整次搜索最多用几秒（可选），从收到请求算起；估计来不及再翻一页时就停止翻页，返回已拿到的结果并设 time_limited。用于调用方有超时限制的情况，不填则不限"`
 }
