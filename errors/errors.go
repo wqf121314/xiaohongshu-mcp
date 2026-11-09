@@ -14,3 +14,7 @@ var ErrVerificationRequired = errors.New("小红书要求安全验证：当前�
 
 // ErrLoginRequired 未登录或登录态已失效，请求被重定向到登录页。
 var ErrLoginRequired = errors.New("未登录或登录态已失效：请求被重定向到登录页，请重新扫码登录")
+
+// ErrLoginRiskControl 扫码后小红书要求滑块、短信等安全验证，后台浏览器无法完成。
+var ErrLoginRiskControl = errors.New("登录风控：扫码后小红书要求完成滑块、短信等安全验证，后台浏览器无法完成。" +
+	"请不要再获取二维码，改用浏览器手动登录")

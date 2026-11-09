@@ -2,9 +2,11 @@ package xiaohongshu
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/go-rod/rod"
+	myerrors "github.com/xpzouying/xiaohongshu-mcp/errors"
 	"github.com/xpzouying/xiaohongshu-mcp/humanize"
 )
 
@@ -36,8 +38,14 @@ func (n *NavigateAction) ToProfilePage(ctx context.Context) error {
 
 	page.MustWaitStable()
 
-	// Find and click the "我" channel link in sidebar
-	profileLink := page.MustElement(`div.main-container li.user.side-bar-component a.link-wrapper span.channel`)
+	// 侧边栏的「我」只在登录后出现；没有就是登录失效，直接报错，不等满超时
+	profileLink, err := page.Sleeper(rod.NotFoundSleeper).Element(`div.main-container li.user.side-bar-component a.link-wrapper span.channel`)
+	if err != nil {
+		if errors.Is(err, &rod.ElementNotFoundError{}) {
+			return myerrors.ErrLoginRequired
+		}
+		return err
+	}
 	humanize.Delay(ctx, humanize.BeforeClick)
 	if err := humanize.Click(profileLink); err != nil {
 		return err
