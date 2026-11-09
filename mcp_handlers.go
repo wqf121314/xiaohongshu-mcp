@@ -10,6 +10,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/xiaohongshu-mcp/cookies"
+	xhserrors "github.com/xpzouying/xiaohongshu-mcp/errors"
 	"github.com/xpzouying/xiaohongshu-mcp/xiaohongshu"
 )
 
@@ -45,6 +46,8 @@ func (s *AppServer) handleCheckLoginStatus(ctx context.Context) *MCPToolResult {
 	var resultText string
 	if status.IsLoggedIn {
 		resultText = fmt.Sprintf("✅ 已登录\n用户名: %s\n\n你可以使用其他功能了。", status.Username)
+	} else if hint, ok := loginStageHints[xiaohongshu.LoginStage(status.LoginStage)]; ok {
+		resultText = hint
 	} else {
 		resultText = "❌ 未登录\n\n请使用 get_login_qrcode 工具获取二维码进行登录。"
 	}
@@ -85,9 +88,20 @@ func (s *AppServer) handleGetLoginQrcode(ctx context.Context) *MCPToolResult {
 		return now.Add(d).Format("2006-01-02 15:04:05")
 	}()
 
-	// 已登录：文本 + 图片
+	text := "请用小红书 App 在 " + deadline + " 前扫码登录 👇"
+	switch xiaohongshu.LoginStage(result.Stage) {
+	case xiaohongshu.StageScanned:
+		// 已扫过，再给码只会让人重复扫
+		return &MCPToolResult{
+			Content: []MCPContent{{Type: "text", Text: loginStageHints[xiaohongshu.StageScanned]}},
+		}
+	case xiaohongshu.StageRescan:
+		text = "需要再扫一次：扫码后小红书要求验证身份，请用已登录该账号的小红书 App 扫下面的二维码（1 分钟内有效），并在手机上确认 👇"
+	}
+
+	// 未登录：文本 + 图片
 	contents := []MCPContent{
-		{Type: "text", Text: "请用小红书 App 在 " + deadline + " 前扫码登录 👇"},
+		{Type: "text", Text: text},
 		{
 			Type:     "image",
 			MimeType: "image/png",
@@ -95,6 +109,16 @@ func (s *AppServer) handleGetLoginQrcode(ctx context.Context) *MCPToolResult {
 		},
 	}
 	return &MCPToolResult{Content: contents}
+}
+
+// loginStageHints 有扫码会话在等时，各阶段对应的提示。
+var loginStageHints = map[xiaohongshu.LoginStage]string{
+	xiaohongshu.StageWaitScan:     "❌ 未登录\n\n二维码还在等待扫码，无需重新获取。扫码并在手机上确认后再查看。",
+	xiaohongshu.StageScanned:      "⏳ 二维码已被扫描，请在手机上确认登录（不用再扫）。确认后用 check_login_status 查看结果。",
+	xiaohongshu.StageQrExpired:    "❌ 未登录\n\n二维码已过期，调用 get_login_qrcode 会刷新出新的二维码。",
+	xiaohongshu.StageRescan:       "⚠️ 未登录：扫码后小红书要求安全验证，需要再扫一次。请调用 get_login_qrcode 获取验证二维码，用已登录该账号的小红书 App 扫码并确认。",
+	xiaohongshu.StageVerification: "❌ " + xhserrors.ErrLoginRiskControl.Error(),
+	xiaohongshu.StageUnknown:      "❌ 未登录\n\n登录页正在跳转，请几秒后再查看。",
 }
 
 // handleDeleteCookies 处理删除 cookies 请求，用于登录重置

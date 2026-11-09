@@ -44,8 +44,9 @@ type PublishRequest struct {
 // LoginStatusResponse 登录状态响应
 type LoginStatusResponse struct {
 	IsLoggedIn bool   `json:"is_logged_in"`
-	Username   string `json:"username,omitempty"` // 当前登录账号的昵称
-	UserID     string `json:"user_id,omitempty"`  // 用户唯一标识（个人主页 URL 中的 ID）
+	Username   string `json:"username,omitempty"`    // 当前登录账号的昵称
+	UserID     string `json:"user_id,omitempty"`     // 用户唯一标识（个人主页 URL 中的 ID）
+	LoginStage string `json:"login_stage,omitempty"` // 有扫码会话在等时，登录页所处的阶段（见 xiaohongshu.LoginStage）
 }
 
 // LoginQrcodeResponse 登录扫码二维码
@@ -53,6 +54,7 @@ type LoginQrcodeResponse struct {
 	Timeout    string `json:"timeout"`
 	IsLoggedIn bool   `json:"is_logged_in"`
 	Img        string `json:"img,omitempty"`
+	Stage      string `json:"stage,omitempty"` // 这张码处于哪个阶段：wait_scan / scanned / rescan 等
 }
 
 // PublishResponse 发布响应
@@ -106,106 +108,6 @@ func (s *XiaohongshuService) DeleteCookies(ctx context.Context) error {
 	cookiePath := cookies.GetCookiesFilePath()
 	cookieLoader := cookies.NewLoadCookie(cookiePath)
 	return cookieLoader.DeleteCookies()
-}
-
-// CheckLoginStatus 检查登录状态
-func (s *XiaohongshuService) CheckLoginStatus(ctx context.Context) (*LoginStatusResponse, error) {
-	b := newBrowser()
-	defer b.Close()
-
-	page := b.NewPage()
-	defer page.Close()
-
-	loginAction := xiaohongshu.NewLogin(page)
-
-	isLoggedIn, err := loginAction.CheckLoginStatus(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	response := &LoginStatusResponse{
-		IsLoggedIn: isLoggedIn,
-	}
-
-	// 已登录时从当前页读取真实账号信息；读不到只记 warn，不影响状态返回。
-	if isLoggedIn {
-		if user, err := loginAction.CurrentUser(ctx); err != nil {
-			logrus.Warnf("failed to get current user info: %v", err)
-		} else {
-			response.Username = user.Nickname
-			response.UserID = user.UserID
-		}
-	}
-
-	return response, nil
-}
-
-// GetLoginQrcode 获取登录的扫码二维码
-func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context) (*LoginQrcodeResponse, error) {
-	b := newBrowser()
-	// 建页和取码都可能 panic。只有后台接手扫码后，才由它关闭浏览器。
-	handedOff := false
-	defer func() {
-		if !handedOff {
-			b.Close()
-		}
-	}()
-
-	page := b.NewPage()
-	loginAction := xiaohongshu.NewLogin(page)
-
-	img, loggedIn, err := loginAction.FetchQrcodeImage(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	timeout := 4 * time.Minute
-
-	if !loggedIn {
-		s.waitScanInBackground(loginAction, page, b.Close, timeout)
-		handedOff = true
-	}
-
-	return &LoginQrcodeResponse{
-		Timeout: func() string {
-			if loggedIn {
-				return "0s"
-			}
-			return timeout.String()
-		}(),
-		Img:        img,
-		IsLoggedIn: loggedIn,
-	}, nil
-}
-
-// waitScanInBackground 在后台等用户扫码，扫上了就存 cookie。
-//
-// 浏览器必须一直活着才检测得到扫码，所以这里不能提前关；但也不能任由它堆积——
-// 再取一次二维码就会把上一个还在等的会话关掉，同一时刻只留一个。
-func (s *XiaohongshuService) waitScanInBackground(
-	loginAction *xiaohongshu.LoginAction, page *rod.Page, closeBrowser func(), timeout time.Duration,
-) {
-	ctxTimeout, cancel := context.WithTimeout(context.Background(), timeout)
-	seq := s.logins.start(cancel)
-	logrus.Infof("等待扫码登录，会话 #%d，超时 %s", seq, timeout)
-
-	go func() {
-		defer closeBrowser()
-		defer cancel()
-		defer s.logins.finish(seq)
-
-		if loginAction.WaitForLogin(ctxTimeout) {
-			if err := saveCookies(page); err != nil {
-				logrus.Errorf("扫码成功但保存 cookies 失败，会话 #%d: %v", seq, err)
-				return
-			}
-			logrus.Infof("扫码登录成功，cookies 已保存，会话 #%d", seq)
-			return
-		}
-
-		// 没等到扫码：要么超时，要么被新取的二维码取代
-		logrus.Infof("登录会话 #%d 结束，未检测到扫码（超时或已被新的二维码取代）", seq)
-	}()
 }
 
 // PublishContent 发布内容
